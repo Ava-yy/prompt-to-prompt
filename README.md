@@ -2,8 +2,7 @@
 A working prompt-to-prompt mod to the original repo 
 
 
-# ============= ORIGINAL README =============
-# Prompt-to-Prompt
+## ============= ORIGINAL README =============
 > *Latent Diffusion* and *Stable Diffusion* Implementation
 
 ## :partying_face: ***New:*** :partying_face: Code for Null-Text Inversion is now provided [here](#null-text-inversion-for-editing-real-images)
