@@ -1,6 +1,12 @@
 # Prompt-to-Prompt
 A working prompt-to-prompt mod to the original repo 
 
+## Installation
+Under a virtual env:
+```
+pip install -r requirements.txt
+```
+
 
 ## ============= ORIGINAL README =============
 > *Latent Diffusion* and *Stable Diffusion* Implementation
