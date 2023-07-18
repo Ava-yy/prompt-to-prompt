@@ -3,14 +3,13 @@ from time import time
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import ptp_utils
+import seq_aligner
 import torch
 import torch.nn.functional as nnf
 from diffusers import StableDiffusionPipeline
-from PIL import Image
-
-import ptp_utils
-import seq_aligner
 from main_utils import makedirs
+from PIL import Image
 
 # MY_TOKEN = '<replace with your token>'
 LOW_RESOURCE = True
@@ -20,6 +19,7 @@ MAX_NUM_WORDS = 77
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 pipe = StableDiffusionPipeline.from_pretrained(
     "CompVis/stable-diffusion-v1-4",
+    # "stabilityai/stable-diffusion-2-1",  # 768x768
     #     use_auth_token=MY_TOKEN
 ).to(device)
 tokenizer = pipe.tokenizer
@@ -323,8 +323,8 @@ if __name__ == '__main__':
     prompts = [
         # "A photo of a squirrel eating a burger",
         # "A photo of a lion eating a burger",
-        "A photo of a white male",
-        "A photo of a Asian male",
+        "a high quality photo of a white male face",
+        "a high quality photo of a Asian male face",
     ]
     timestamp = int(time())
     out_dir = f'data_out/{"_".join(prompts[0].split())}-t{timestamp}'
