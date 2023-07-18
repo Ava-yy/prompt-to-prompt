@@ -1,4 +1,5 @@
 import abc
+import sys
 from time import time
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -320,20 +321,24 @@ def run_and_display(prompts, controller, latent=None, run_baseline=False, genera
 
 
 if __name__ == '__main__':
+    seed_start = int(sys.argv[1])
+    seed_end = int(sys.argv[2]) + 1
     prompts = [
         # "A photo of a squirrel eating a burger",
         # "A photo of a lion eating a burger",
         "a high quality photo of a white male face",
         "a high quality photo of a Asian male face",
+        # "A dog sitting next to a cat",
+        # "A cat sitting next to a dog",
     ]
     timestamp = int(time())
     out_dir = f'data_out/{"_".join(prompts[0].split())}-t{timestamp}'
     makedirs(out_dir)
 
-    for seed in range(25):
+    for seed in range(seed_start, seed_end):
         controller = AttentionReplace(
             prompts, NUM_DIFFUSION_STEPS,
-            cross_replace_steps=.8,
+            cross_replace_steps=0.8,
             self_replace_steps=0.4,
         )
         images, x_t = ptp_utils.text2image_ldm_stable(
