@@ -110,10 +110,14 @@ def latent2image(vae, latents):
 
 
 def init_latent(latent, model, height, width, generator, batch_size):
+# def init_latent(latent, model, height, width, generator, batch_size, dtype=None):
+#     if dtype is None:
+#         dtype = model.unet.dtype
     if latent is None:
         latent = torch.randn(
             (1, model.unet.config.in_channels, height // 8, width // 8),
             generator=generator,
+#             dtype=dtype
         )
     latents = latent.expand(
         batch_size, model.unet.config.in_channels, height // 8, width // 8
