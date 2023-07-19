@@ -1,5 +1,7 @@
 # Prompt-to-Prompt
 A working prompt-to-prompt mod to the original repo 
+Tested on python3.10 virtualenv and packges in requirements.txt
+
 
 ## Installation
 Under a virtual env:

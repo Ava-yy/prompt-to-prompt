@@ -23,6 +23,10 @@ pipe = StableDiffusionPipeline.from_pretrained(
     # "stabilityai/stable-diffusion-2-1",  # 768x768
     #     use_auth_token=MY_TOKEN
 ).to(device)
+pipe.enable_attention_slicing()
+pipe.enable_vae_slicing()
+# pipe.enable_sequential_cpu_offload()
+
 tokenizer = pipe.tokenizer
 
 
@@ -326,10 +330,12 @@ if __name__ == '__main__':
     prompts = [
         # "A photo of a squirrel eating a burger",
         # "A photo of a lion eating a burger",
-        "a high quality photo of a white male face",
-        "a high quality photo of a Asian male face",
-        # "A dog sitting next to a cat",
-        # "A cat sitting next to a dog",
+        # "a high quality photo of a white male face",
+        # "a high quality photo of a Asian male face",
+        # "a high quality photo of a Asian male face",
+        # "a high quality photo of a white male face",
+        "A dog sitting next to a cat",
+        "A cat sitting next to a dog",
     ]
     timestamp = int(time())
     out_dir = f'data_out/{"_".join(prompts[0].split())}-t{timestamp}'

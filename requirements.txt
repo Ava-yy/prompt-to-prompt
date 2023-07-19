@@ -3,7 +3,11 @@ transformers==4.25.1
 ftfy
 opencv-python
 ipywidgets
-notebook
 torch
+notebook
+
+# optional
 accelerate
 safetensors
+torchvision==0.15.2
+matplotlib=3.7.2
