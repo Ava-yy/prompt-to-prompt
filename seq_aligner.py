@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
 import numpy as np
+import torch
 
 
 class ScoreParams:
@@ -27,8 +27,8 @@ class ScoreParams:
             return self.mismatch
         else:
             return self.match
-        
-    
+
+
 def get_matrix(size_x, size_y, gap):
     matrix = []
     for i in range(len(size_x) + 1):
@@ -37,9 +37,9 @@ def get_matrix(size_x, size_y, gap):
             sub_matrix.append(0)
         matrix.append(sub_matrix)
     for j in range(1, len(size_y) + 1):
-        matrix[0][j] = j*gap
+        matrix[0][j] = j * gap
     for i in range(1, len(size_x) + 1):
-        matrix[i][0] = i*gap
+        matrix[i][0] = i * gap
     return matrix
 
 
@@ -51,7 +51,7 @@ def get_matrix(size_x, size_y, gap):
 
 
 def get_traceback_matrix(size_x, size_y):
-    matrix = np.zeros((size_x + 1, size_y +1), dtype=np.int32)
+    matrix = np.zeros((size_x + 1, size_y + 1), dtype=np.int32)
     matrix[0, 1:] = 1
     matrix[1:, 0] = 2
     matrix[0, 0] = 4
@@ -84,20 +84,20 @@ def get_aligned_sequences(x, y, trace_back):
     mapper_y_to_x = []
     while i > 0 or j > 0:
         if trace_back[i, j] == 3:
-            x_seq.append(x[i-1])
-            y_seq.append(y[j-1])
-            i = i-1
-            j = j-1
+            x_seq.append(x[i - 1])
+            y_seq.append(y[j - 1])
+            i = i - 1
+            j = j - 1
             mapper_y_to_x.append((j, i))
         elif trace_back[i][j] == 1:
             x_seq.append('-')
-            y_seq.append(y[j-1])
-            j = j-1
+            y_seq.append(y[j - 1])
+            j = j - 1
             mapper_y_to_x.append((j, -1))
         elif trace_back[i][j] == 2:
-            x_seq.append(x[i-1])
+            x_seq.append(x[i - 1])
             y_seq.append('-')
-            i = i-1
+            i = i - 1
         elif trace_back[i][j] == 4:
             break
     mapper_y_to_x.reverse()
@@ -136,7 +136,8 @@ def get_word_inds(text: str, word_place: int, tokenizer):
         word_place = [word_place]
     out = []
     if len(word_place) > 0:
-        words_encode = [tokenizer.decode([item]).strip("#") for item in tokenizer.encode(text)][1:-1]
+        words_encode = [tokenizer.decode([item]).strip("#")
+                        for item in tokenizer.encode(text)][1:-1]
         cur_len, ptr = 0, 0
 
         for i in range(len(words_encode)):
@@ -185,7 +186,6 @@ def get_replacement_mapper_(x: str, y: str, tokenizer, max_len=77):
     return torch.from_numpy(mapper).float()
 
 
-
 def get_replacement_mapper(prompts, tokenizer, max_len=77):
     x_seq = prompts[0]
     mappers = []
@@ -193,4 +193,3 @@ def get_replacement_mapper(prompts, tokenizer, max_len=77):
         mapper = get_replacement_mapper_(x_seq, prompts[i], tokenizer, max_len)
         mappers.append(mapper)
     return torch.stack(mappers)
-
