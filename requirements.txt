@@ -1,13 +1,14 @@
-diffusers==0.10.0
-transformers==4.25.1
-ftfy
-opencv-python
-ipywidgets
-torch
-notebook
+diffusers==0.18.2
+transformers==4.30.2
+ftfy==6.1.1
+opencv-python==4.8.0.74
+ipywidgets==8.0.6
+notebook==6.5.4
+torch==2.0.1                                                                                                        │
+torchvision==0.15.2
 
-# optional
-accelerate
-safetensors
+# optional (?)
+accelerate==0.20.3
+safetensors==0.3.1
 torchvision==0.15.2
 matplotlib=3.7.2

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -110,14 +111,14 @@ def latent2image(vae, latents):
 
 
 def init_latent(latent, model, height, width, generator, batch_size):
-# def init_latent(latent, model, height, width, generator, batch_size, dtype=None):
-#     if dtype is None:
-#         dtype = model.unet.dtype
+    # def init_latent(latent, model, height, width, generator, batch_size, dtype=None):
+    #     if dtype is None:
+    #         dtype = model.unet.dtype
     if latent is None:
         latent = torch.randn(
             (1, model.unet.config.in_channels, height // 8, width // 8),
             generator=generator,
-#             dtype=dtype
+            #             dtype=dtype
         )
     latents = latent.expand(
         batch_size, model.unet.config.in_channels, height // 8, width // 8
@@ -201,6 +202,10 @@ def text2image_ldm_stable(
         context = torch.cat(context)
     latent, latents = init_latent(
         latent, model, height, width, generator, batch_size)
+    # MOD: half()
+    dtype = model.unet.dtype
+    latent = latent.type(dtype)
+    latents = latents.type(dtype)
 
     model.scheduler.set_timesteps(num_inference_steps)
     for t in tqdm(model.scheduler.timesteps):
@@ -214,44 +219,161 @@ def text2image_ldm_stable(
 
 
 def register_attention_control(model, controller):
-    def ca_forward(self, place_in_unet):
-        to_out = self.to_out
-        if type(to_out) is torch.nn.modules.container.ModuleList:
-            to_out = self.to_out[0]
-        else:
-            to_out = self.to_out
-
-        def forward(x, context=None, mask=None):
-            batch_size, sequence_length, dim = x.shape
-            h = self.heads
-            q = self.to_q(x)
-            is_cross = context is not None
-            context = context if is_cross else x
-            k = self.to_k(context)
-            v = self.to_v(context)
-            q = self.reshape_heads_to_batch_dim(q)
-            k = self.reshape_heads_to_batch_dim(k)
-            v = self.reshape_heads_to_batch_dim(v)
-
-            sim = torch.einsum("b i d, b j d -> b i j", q, k) * self.scale
-
-            if mask is not None:
-                mask = mask.reshape(batch_size, -1)
-                max_neg_value = -torch.finfo(sim.dtype).max
-                mask = mask[:, None, :].repeat(h, 1, 1)
-                sim.masked_fill_(~mask, max_neg_value)
-
-            # attention, what we cannot get enough of
-            attn = sim.softmax(dim=-1)
-            attn = controller(attn, is_cross, place_in_unet)
-            out = torch.einsum("b i j, b j d -> b i d", attn, v)
-            out = self.reshape_batch_dim_to_heads(out)
-            return to_out(out)
-
+    def ca_forward(
+        attention_module,
+        place_in_unet
+    ):
+        def forward(
+            hidden_states,
+            encoder_hidden_states=None,
+            attention_mask=None,
+            **cross_attention_kwargs
+        ):
+            return process(
+                attention_module.processor,  # the processor as 'self',
+                attention_module,
+                hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                attention_mask=attention_mask,
+                place_in_unet=place_in_unet,
+                **cross_attention_kwargs
+            )
         return forward
 
+    def process(
+        self,
+        attn,  # : Attention,
+        hidden_states,
+        encoder_hidden_states=None,
+        attention_mask=None,
+        temb=None,
+        place_in_unet='up',
+    ):
+        residual = hidden_states
+        if attn.spatial_norm is not None:
+            hidden_states = attn.spatial_norm(hidden_states, temb)
+
+        input_ndim = hidden_states.ndim
+
+        if input_ndim == 4:
+            batch_size, channel, height, width = hidden_states.shape
+            hidden_states = hidden_states.view(
+                batch_size, channel, height * width).transpose(1, 2)
+
+        batch_size, sequence_length, _ = (
+            hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
+        )
+        inner_dim = hidden_states.shape[-1]
+
+        if attention_mask is not None:
+            attention_mask = attn.prepare_attention_mask(
+                attention_mask, sequence_length, batch_size)
+            # scaled_dot_product_attention expects attention_mask shape to be
+            # (batch, heads, source_length, target_length)
+            attention_mask = attention_mask.view(
+                batch_size, attn.heads, -1, attention_mask.shape[-1])
+
+        if attn.group_norm is not None:
+            hidden_states = attn.group_norm(
+                hidden_states.transpose(1, 2)).transpose(1, 2)
+
+        query = attn.to_q(hidden_states)
+
+        is_cross = encoder_hidden_states is not None
+        if not is_cross:  # self attention
+            encoder_hidden_states = hidden_states
+        elif attn.norm_cross:  # cross attention and we normalize
+            encoder_hidden_states = attn.norm_encoder_hidden_states(
+                encoder_hidden_states)
+
+        key = attn.to_k(encoder_hidden_states)
+        value = attn.to_v(encoder_hidden_states)
+
+        head_dim = inner_dim // attn.heads
+        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+
+        # the output of sdp = (batch, num_heads, seq_len, head_dim)
+        # hidden_states = F.scaled_dot_product_attention(
+        #     query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
+        # )
+        # The ATTENTION IMPLEMENTATION
+        # that replaces the F.scaled_dot_product_attention above, to expose attn_weight. See
+        # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
+        attn_weight = torch.softmax(
+            (query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))), dim=-1)
+    #     attn_weight.shape == [instances, heads, w*h, tokens]. e.g., == [2, 8, 4096, 12]
+
+        # where attention edit happens
+        attn_weight = controller(
+            attn_weight,
+            is_cross=is_cross,
+            place_in_unet=place_in_unet
+        )
+
+        hidden_states = attn_weight @ value
+
+        hidden_states = hidden_states.transpose(1, 2).reshape(
+            batch_size, -1, attn.heads * head_dim)
+        hidden_states = hidden_states.to(query.dtype)
+
+        # linear proj
+        hidden_states = attn.to_out[0](hidden_states)
+        # dropout
+        hidden_states = attn.to_out[1](hidden_states)
+
+        if input_ndim == 4:
+            hidden_states = hidden_states.transpose(
+                -1, -2).reshape(batch_size, channel, height, width)
+
+        if attn.residual_connection:
+            hidden_states = hidden_states + residual
+
+        hidden_states = hidden_states / attn.rescale_output_factor
+        return hidden_states
+
+    # def ca_forward(self, place_in_unet):
+    #     print('calling ca_forward', self, place_in_unet)
+
+    #     to_out = self.to_out
+    #     if type(to_out) is torch.nn.modules.container.ModuleList:
+    #         to_out = self.to_out[0]
+    #     else:
+    #         to_out = self.to_out
+
+    #     def forward(x, encoder_hidden_states=None, attention_mask=None):
+    #         print(f'hooked forward, {x.shape}')
+    #         batch_size, sequence_length, dim = x.shape
+    #         h = self.heads
+    #         q = self.to_q(x)
+    #         is_cross = encoder_hidden_states is not None
+    #         kv_states = encoder_hidden_states if is_cross else x
+    #         k = self.to_k(kv_states)
+    #         v = self.to_v(kv_states)
+    #         q = self.reshape_heads_to_batch_dim(q)
+    #         k = self.reshape_heads_to_batch_dim(k)
+    #         v = self.reshape_heads_to_batch_dim(v)
+
+    #         sim = torch.einsum("b i d, b j d -> b i j", q, k) * self.scale
+
+    #         if attention_mask is not None:
+    #             attention_mask = attention_mask.reshape(batch_size, -1)
+    #             max_neg_value = -torch.finfo(sim.dtype).max
+    #             attention_mask = attention_mask[:, None, :].repeat(h, 1, 1)
+    #             sim.masked_fill_(~attention_mask, max_neg_value)
+
+    #         # attention, what we cannot get enough of
+    #         attn = sim.softmax(dim=-1)
+    #         attn = controller(attn, is_cross, place_in_unet)
+    #         out = torch.einsum("b i j, b j d -> b i d", attn, v)
+    #         out = self.reshape_batch_dim_to_heads(out)
+    #         return to_out(out)
+
+    #     return forward
+
     class DummyController:
-        def __call__(self, *args):
+        def __call__(self, *args, **kwargs):
             return args[0]
 
         def __init__(self):
@@ -261,7 +383,7 @@ def register_attention_control(model, controller):
         controller = DummyController()
 
     def register_recr(net_, count, place_in_unet):
-        if net_.__class__.__name__ == "CrossAttention":
+        if net_.__class__.__name__ == "Attention":
             net_.forward = ca_forward(net_, place_in_unet)
             return count + 1
         elif hasattr(net_, "children"):
