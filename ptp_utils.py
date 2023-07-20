@@ -81,6 +81,7 @@ def diffusion_step(
     model, controller, latents, context, t, guidance_scale, low_resource=False
 ):
     if low_resource:
+        # print("diffusion_step, model.uet", latents.dtype, t, context[0].dtype)
         noise_pred_uncond = model.unet(latents, t, encoder_hidden_states=context[0])[
             "sample"
         ]
@@ -212,6 +213,7 @@ def text2image_ldm_stable(
         latents = diffusion_step(
             model, controller, latents, context, t, guidance_scale, low_resource
         )
+        # print('diffusion_step output latents:', latents.dtype)
 
     image = latent2image(model.vae, latents)
 
