@@ -28,9 +28,8 @@ if __name__ == "__main__":
 
     MY_TOKEN = ""
     LOW_RESOURCE = True
-    NUM_DDIM_STEPS = 20
+    NUM_DDIM_STEPS = 50
     GUIDANCE_SCALE = 7.5
-    # MAX_NUM_WORDS = 77
 
     device = (
         torch.device("cuda:0") if torch.cuda.is_available(

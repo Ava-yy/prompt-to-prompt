@@ -20,9 +20,8 @@ from NullInversion import NullInversion
 if __name__ == "__main__":
     MY_TOKEN = ""
     LOW_RESOURCE = True
-    NUM_DDIM_STEPS = 20
+    NUM_DDIM_STEPS = 2
     GUIDANCE_SCALE = 7.5
-    # MAX_NUM_WORDS = 77
 
     scheduler = DDIMScheduler(
         beta_start=0.00085,
@@ -55,13 +54,62 @@ if __name__ == "__main__":
     # pipe.enable_sequential_cpu_offload()
     tokenizer = pipe.tokenizer
 
-    data = torch.load("invert.pth")
+    data = torch.load("invert.pth", map_location="cpu")
     x_t = data.get("x_t").type(dtype)
-    uncond_embeddings = [d.type(dtype) for d in data.get("uncond_embeddings")]
+    uncond_embeddings = [d.type(dtype)[:, :40]
+                         for d in data.get("uncond_embeddings")]
+    print(uncond_embeddings[0].shape)
 
-    prompt = "a cat sitting next to a mirror"
-    prompts = [prompt]
-    controller = AttentionStore()
+    # prompt = "a cat sitting next to a mirror"
+    # prompts = [prompt]
+    # controller = AttentionStore()
+    # null_inversion_images, x_t = inversion_utils.text2image_ldm_stable(
+    #     pipe,
+    #     prompts,
+    #     controller,
+    #     latent=x_t,
+    #     generator=None,
+    #     num_inference_steps=NUM_DDIM_STEPS,
+    #     guidance_scale=GUIDANCE_SCALE,
+    #     # uncond_embeddings=uncond_embeddings,
+    # )
+    # # save images from inverted latents
+    # print(
+    #     f"null_inversion_images.shape: {null_inversion_images.shape}",
+    #     f"x_t.shape: {x_t.shape}",
+    # )
+    # # for i, image in enumerate(null_inversion_images):
+    # #     image_pil = Image.fromarray(image)
+    # #     image_pil.save(f"image-{i}.png")
+    # image_grid_pil = ptp_utils.view_images([*null_inversion_images])
+    # image_grid_pil.save("image-invertion.png")
+    # # main_utils.show_cross_attention(controller, 16, ["up", "down"])
+
+    prompts = ["a cat sitting next to a mirror",
+               "a tiger sitting next to a mirror"]
+    cross_replace_steps = {
+        "default_": 0.8,
+    }
+    self_replace_steps = 0.5
+    # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
+    blend_word = (
+        ("cat",),
+        ("tiger",),
+    )
+    eq_params = {
+        "words": ("tiger",),
+        "values": (2,),
+    }  # amplify attention to the word "tiger" by *2
+    controller = make_controller(
+        prompts,
+        True,
+        cross_replace_steps,
+        self_replace_steps,
+        blend_word,
+        eq_params,
+        tokenizer,
+        num_ddim_steps=NUM_DDIM_STEPS,
+    )
     null_inversion_images, x_t = inversion_utils.text2image_ldm_stable(
         pipe,
         prompts,
@@ -72,58 +120,11 @@ if __name__ == "__main__":
         guidance_scale=GUIDANCE_SCALE,
         uncond_embeddings=uncond_embeddings,
     )
-    # save images from inverted latents
-    print(
-        f"null_inversion_images.shape: {null_inversion_images.shape}",
-        f"x_t.shape: {x_t.shape}",
-    )
     # for i, image in enumerate(null_inversion_images):
     #     image_pil = Image.fromarray(image)
-    #     image_pil.save(f"image-{i}.png")
+    #     image_pil.save(f"image-tiger-{i}.png")
     image_grid_pil = ptp_utils.view_images([*null_inversion_images])
-    image_grid_pil.save("image-invertion.png")
-    # main_utils.show_cross_attention(controller, 16, ["up", "down"])
-
-    # prompts = ["a cat sitting next to a mirror",
-    #            "a tiger sitting next to a mirror"]
-    # cross_replace_steps = {
-    #     "default_": 0.8,
-    # }
-    # self_replace_steps = 0.5
-    # # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
-    # blend_word = (
-    #     ("cat",),
-    #     ("tiger",),
-    # )
-    # eq_params = {
-    #     "words": ("tiger",),
-    #     "values": (2,),
-    # }  # amplify attention to the word "tiger" by *2
-    # controller = make_controller(
-    #     prompts,
-    #     True,
-    #     cross_replace_steps,
-    #     self_replace_steps,
-    #     blend_word,
-    #     eq_params,
-    #     tokenizer,
-    #     num_ddim_steps=NUM_DDIM_STEPS,
-    # )
-    # null_inversion_images, x_t = inversion_utils.text2image_ldm_stable(
-    #     pipe,
-    #     prompts,
-    #     controller,
-    #     latent=x_t,
-    #     generator=None,
-    #     num_inference_steps=NUM_DDIM_STEPS,
-    #     guidance_scale=GUIDANCE_SCALE,
-    #     uncond_embeddings=uncond_embeddings,
-    # )
-    # # for i, image in enumerate(null_inversion_images):
-    # #     image_pil = Image.fromarray(image)
-    # #     image_pil.save(f"image-tiger-{i}.png")
-    # image_grid_pil = ptp_utils.view_images([image_gt, *null_inversion_images])
-    # image_grid_pil.save("image-tiger.png")
+    image_grid_pil.save("image-tiger.png")
 
     # prompts = [
     #     "a cat sitting next to a mirror",

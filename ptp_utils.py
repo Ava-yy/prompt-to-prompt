@@ -22,7 +22,7 @@ from IPython.display import display
 from PIL import Image, ImageDraw, ImageFont
 from tqdm.auto import tqdm
 
-MAX_NUM_WORDS = 77
+from constants import MAX_NUM_WORDS
 
 
 def text_under_image(
@@ -77,19 +77,26 @@ def view_images(images, num_rows=1, offset_ratio=0.02):
 
     pil_img = Image.fromarray(image_)
     display(pil_img)
+    return pil_img
 
 
 def diffusion_step(
-    model, controller, latents, context, t, guidance_scale, low_resource=True
+    model, controller, latents, context, t, guidance_scale, low_resource=False
 ):
+    print("diffusion_step()")
+    print("latents.shape", latents.shape)
+    print("context.shape:", context.shape)
+    # latents.shape torch.Size([2, 4, 64, 64])
+    # context.shape: torch.Size([4, 40, 768])
+
     if low_resource:
         # print("diffusion_step, model.uet", latents.dtype, t, context[0].dtype)
-        noise_pred_uncond = model.unet(latents, t, encoder_hidden_states=context[0])[
-            "sample"
-        ]
+        noise_pred_uncond = model.unet(
+            latents, t, encoder_hidden_states=context[:2]
+        ).sample
         noise_prediction_text = model.unet(
-            latents, t, encoder_hidden_states=context[1]
-        )["sample"]
+            latents, t, encoder_hidden_states=context[2:]
+        ).sample
     else:
         latents_input = torch.cat([latents] * 2)
         noise_pred = model.unet(latents_input, t, encoder_hidden_states=context)[
@@ -129,44 +136,39 @@ def init_latent(latent, model, height, width, generator, batch_size):
     return latent, latents
 
 
-@torch.no_grad()
-def text2image_ldm(
-    model,
-    prompt: List[str],
-    controller,
-    num_inference_steps: int = 50,
-    guidance_scale: Optional[float] = 7.0,
-    generator: Optional[torch.Generator] = None,
-    latent: Optional[torch.FloatTensor] = None,
-):
-    register_attention_control(model, controller)
-    height = width = 256
-    batch_size = len(prompt)
-
-    uncond_input = model.tokenizer(
-        [""] * batch_size,
-        padding="max_length",
-        max_length=MAX_NUM_WORDS,
-        return_tensors="pt",
-    )
-    uncond_embeddings = model.bert(uncond_input.input_ids.to(model.device))[0]
-
-    text_input = model.tokenizer(
-        prompt, padding="max_length", max_length=MAX_NUM_WORDS, return_tensors="pt"
-    )
-    text_embeddings = model.bert(text_input.input_ids.to(model.device))[0]
-    latent, latents = init_latent(
-        latent, model, height, width, generator, batch_size)
-    context = torch.cat([uncond_embeddings, text_embeddings])
-
-    model.scheduler.set_timesteps(num_inference_steps)
-    for t in tqdm(model.scheduler.timesteps):
-        latents = diffusion_step(
-            model, controller, latents, context, t, guidance_scale)
-
-    image = latent2image(model.vqvae, latents)
-
-    return image, latent
+# @torch.no_grad()
+# def text2image_ldm(
+#     model,
+#     prompt: List[str],
+#     controller,
+#     num_inference_steps: int = 50,
+#     guidance_scale: Optional[float] = 7.0,
+#     generator: Optional[torch.Generator] = None,
+#     latent: Optional[torch.FloatTensor] = None,
+# ):
+#     register_attention_control(model, controller)
+#     height = width = 256
+#     batch_size = len(prompt)
+#     uncond_input = model.tokenizer(
+#         [""] * batch_size,
+#         padding="max_length",
+#         max_length=MAX_NUM_WORDS,
+#         return_tensors="pt",
+#     )
+#     uncond_embeddings = model.bert(uncond_input.input_ids.to(model.device))[0]
+#     text_input = model.tokenizer(
+#         prompt, padding="max_length", max_length=MAX_NUM_WORDS, return_tensors="pt"
+#     )
+#     text_embeddings = model.bert(text_input.input_ids.to(model.device))[0]
+#     latent, latents = init_latent(
+#         latent, model, height, width, generator, batch_size)
+#     context = torch.cat([uncond_embeddings, text_embeddings])
+#     model.scheduler.set_timesteps(num_inference_steps)
+#     for t in tqdm(model.scheduler.timesteps):
+#         latents = diffusion_step(
+#             model, controller, latents, context, t, guidance_scale)
+#     image = latent2image(model.vqvae, latents)
+#     return image, latent
 
 
 @torch.no_grad()

@@ -14,6 +14,9 @@ import ptp_utils
 import seq_aligner
 
 
+from constants import MAX_NUM_WORDS
+
+
 # ## Null Text Inversion code
 def load_512(image_path, left=0, right=0, top=0, bottom=0):
     if type(image_path) is str:
@@ -25,14 +28,14 @@ def load_512(image_path, left=0, right=0, top=0, bottom=0):
     right = min(right, w - left - 1)
     top = min(top, h - left - 1)
     bottom = min(bottom, h - top - 1)
-    image = image[top : h - bottom, left : w - right]
+    image = image[top: h - bottom, left: w - right]
     h, w, c = image.shape
     if h < w:
         offset = (w - h) // 2
-        image = image[:, offset : offset + h]
+        image = image[:, offset: offset + h]
     elif w < h:
         offset = (h - w) // 2
-        image = image[offset : offset + w]
+        image = image[offset: offset + w]
     image = np.array(Image.fromarray(image).resize((512, 512)))
     return image
 
@@ -52,17 +55,20 @@ def text2image_ldm_stable(
     return_type="image",
 ):
     dtype = model.unet.dtype
+    device = model.device
+
     batch_size = len(prompt)
     ptp_utils.register_attention_control(model, controller)
     height = width = 512
     text_input = model.tokenizer(
         prompt,
         padding="max_length",
-        max_length=model.tokenizer.model_max_length,
+        # max_length=model.tokenizer.model_max_length,
+        max_length=MAX_NUM_WORDS,
         truncation=True,
         return_tensors="pt",
     )
-    text_embeddings = model.text_encoder(text_input.input_ids.to(model.device))[0]
+    text_embeddings = model.text_encoder(text_input.input_ids.to(device))[0]
     max_length = text_input.input_ids.shape[-1]
     if uncond_embeddings is None:
         uncond_input = model.tokenizer(
@@ -86,12 +92,16 @@ def text2image_ldm_stable(
     for i, t in enumerate(tqdm(model.scheduler.timesteps[-start_time:])):
         if uncond_embeddings_ is None:
             context = torch.cat(
-                [uncond_embeddings[i].expand(*text_embeddings.shape), text_embeddings]
+                [
+                    uncond_embeddings[i].expand(
+                        *text_embeddings.shape).to(device),
+                    text_embeddings,
+                ]
             )
         else:
             context = torch.cat([uncond_embeddings_, text_embeddings])
         latents = ptp_utils.diffusion_step(
-            model, controller, latents, context, t, guidance_scale, low_resource=False
+            model, controller, latents, context, t, guidance_scale, low_resource=True
         )
         latents = latents.type(dtype)  # MOD: half()
     if return_type == "image":
