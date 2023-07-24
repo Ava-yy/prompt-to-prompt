@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 from PIL import Image
 
 import ptp_utils
-from AttentionEdits import AttentionStore
+from AttentionControl import AttentionStore
 
 
 def makedirs(d):

@@ -22,7 +22,7 @@ from IPython.display import display
 from PIL import Image, ImageDraw, ImageFont
 from tqdm.auto import tqdm
 
-
+MAX_NUM_WORDS = 20
 def text_under_image(
     image: np.ndarray, text: str, text_color: Tuple[int, int, int] = (0, 0, 0)
 ):
@@ -78,7 +78,7 @@ def view_images(images, num_rows=1, offset_ratio=0.02):
 
 
 def diffusion_step(
-    model, controller, latents, context, t, guidance_scale, low_resource=False
+    model, controller, latents, context, t, guidance_scale, low_resource=True
 ):
     if low_resource:
         # print("diffusion_step, model.uet", latents.dtype, t, context[0].dtype)
@@ -142,12 +142,12 @@ def text2image_ldm(
     batch_size = len(prompt)
 
     uncond_input = model.tokenizer(
-        [""] * batch_size, padding="max_length", max_length=77, return_tensors="pt"
+        [""] * batch_size, padding="max_length", max_length=MAX_NUM_WORDS, return_tensors="pt"
     )
     uncond_embeddings = model.bert(uncond_input.input_ids.to(model.device))[0]
 
     text_input = model.tokenizer(
-        prompt, padding="max_length", max_length=77, return_tensors="pt"
+        prompt, padding="max_length", max_length=MAX_NUM_WORDS, return_tensors="pt"
     )
     text_embeddings = model.bert(text_input.input_ids.to(model.device))[0]
     latent, latents = init_latent(
@@ -453,7 +453,7 @@ def get_time_words_attention_alpha(
     num_steps,
     cross_replace_steps: Union[float, Dict[str, Tuple[float, float]]],
     tokenizer,
-    max_num_words=77,
+    max_num_words=MAX_NUM_WORDS,
 ):
     if type(cross_replace_steps) is not dict:
         cross_replace_steps = {"default_": cross_replace_steps}
