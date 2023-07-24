@@ -14,7 +14,7 @@
 import numpy as np
 import torch
 
-MAX_NUM_WORDS = 40
+from constants import MAX_NUM_WORDS
 
 
 class ScoreParams:

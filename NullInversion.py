@@ -119,7 +119,8 @@ class NullInversion:
                 image = (
                     torch.from_numpy(image).type(self.dtype) / 127.5 - 1
                 )  # MOD: half()
-                image = image.permute(2, 0, 1).unsqueeze(0).to(self.model.device)
+                image = image.permute(2, 0, 1).unsqueeze(
+                    0).to(self.model.device)
                 latents = self.model.vae.encode(image)["latent_dist"].mean
                 latents = latents * 0.18215
         return latents
@@ -182,7 +183,8 @@ class NullInversion:
         for i in range(self.NUM_DDIM_STEPS):
             uncond_embeddings = uncond_embeddings.clone().detach()
             uncond_embeddings.requires_grad = True
-            optimizer = optim.Adam([uncond_embeddings], lr=1e-2 * (1.0 - i / 100.0))
+            optimizer = optim.Adam([uncond_embeddings],
+                                   lr=1e-2 * (1.0 - i / 100.0))
             latent_prev = latents[len(latents) - i - 2]
             t = self.model.scheduler.timesteps[i]
             with torch.no_grad():

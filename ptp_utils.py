@@ -83,19 +83,21 @@ def view_images(images, num_rows=1, offset_ratio=0.02):
 def diffusion_step(
     model, controller, latents, context, t, guidance_scale, low_resource=False
 ):
-    print("diffusion_step()")
-    print("latents.shape", latents.shape)
-    print("context.shape:", context.shape)
-    # latents.shape torch.Size([2, 4, 64, 64])
-    # context.shape: torch.Size([4, 40, 768])
+    # print("diffusion_step()")
+    # print("latents.shape", latents.shape)
+    # print("context.shape:", context.shape)
+    # # latents.shape torch.Size([2, 4, 64, 64])
+    # # context.shape: torch.Size([4, 40, 768])
 
     if low_resource:
-        # print("diffusion_step, model.uet", latents.dtype, t, context[0].dtype)
+        # print("diffusion_step(), low_resource:")
+        # print("latents.shape", latents.shape)
+        # print("context.shape", context.shape)
         noise_pred_uncond = model.unet(
-            latents, t, encoder_hidden_states=context[:2]
+            latents, t, encoder_hidden_states=context[: len(context) // 2]
         ).sample
         noise_prediction_text = model.unet(
-            latents, t, encoder_hidden_states=context[2:]
+            latents, t, encoder_hidden_states=context[len(context) // 2:]
         ).sample
     else:
         latents_input = torch.cat([latents] * 2)

@@ -17,7 +17,7 @@ from constants import MAX_NUM_WORDS
 
 # ## Prompt-to-Prompt code
 class LocalBlend:
-    def get_mask(self, maps, alpha, use_pool):
+    def get_mask(self, maps, x_t, alpha, use_pool):
         k = 1
         maps = (maps * alpha).sum(-1).mean(1)
         if use_pool:
@@ -40,9 +40,10 @@ class LocalBlend:
                 for item in maps
             ]
             maps = torch.cat(maps, dim=1)
-            mask = self.get_mask(maps, self.alpha_layers, True)
+            mask = self.get_mask(maps, x_t, self.alpha_layers, True)
             if self.substruct_layers is not None:
-                maps_sub = ~self.get_mask(maps, self.substruct_layers, False)
+                maps_sub = ~self.get_mask(
+                    maps, x_t, self.substruct_layers, False)
                 mask = mask * maps_sub
             mask = mask.float()
             x_t = x_t[:1] + mask * (x_t - x_t[:1])
@@ -265,7 +266,9 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
 class AttentionReplace(AttentionControlEdit):
     def replace_cross_attention(self, attn_base, att_replace):
         # print(attn_base.shape, self.mapper.shape)
-        return torch.einsum("...hpw,bwn->bhpn", attn_base, self.mapper)
+        return torch.einsum(
+            "...hpw,bwn->bhpn", attn_base, self.mapper.type(attn_base.dtype)
+        )
 
     def __init__(
         self,
@@ -282,12 +285,16 @@ class AttentionReplace(AttentionControlEdit):
         )
         self.mapper = seq_aligner.get_replacement_mapper(
             prompts, tokenizer).to(device)
-        self.mapper = self.mapper.half()  # MOD: half()
 
 
 class AttentionRefine(AttentionControlEdit):
     def replace_cross_attention(self, attn_base, att_replace):
-        attn_base_replace = attn_base[:, :, self.mapper].permute(2, 0, 1, 3)
+        # print("AttentionRefine.replace_cross_attention()")
+        # print("attn_base.shape", attn_base.shape)
+        # print(self.mapper.shape)
+        # print(attn_base[:, :, self.mapper].shape)
+
+        attn_base_replace = attn_base[0, :, :, self.mapper].permute(2, 0, 1, 3)
         attn_replace = attn_base_replace * \
             self.alphas + att_replace * (1 - self.alphas)
         # attn_replace = attn_replace / attn_replace.sum(-1, keepdims=True)
@@ -315,12 +322,12 @@ class AttentionRefine(AttentionControlEdit):
 class AttentionReweight(AttentionControlEdit):
     def replace_cross_attention(self, attn_base, att_replace):
         if self.prev_controller is not None:
-            #             print(attn_base.dtype, att_replace.dtype, self.equalizer.dtype)
             attn_base = self.prev_controller.replace_cross_attention(
                 attn_base, att_replace
             )
-        attn_replace = attn_base[None, :, :, :] * \
-            self.equalizer[:, None, None, :]
+        attn_replace = attn_base[None, :, :, :] * self.equalizer[:, None, None, :].type(
+            attn_base.dtype
+        )
         # attn_replace = attn_replace / attn_replace.sum(-1, keepdims=True)
         return attn_replace
 
