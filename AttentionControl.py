@@ -45,7 +45,7 @@ class LocalBlend:
                 maps_sub = ~self.get_mask(
                     maps, x_t, self.substruct_layers, False)
                 mask = mask * maps_sub
-            mask = mask.float()
+            mask = mask.type(x_t.dtype)
             x_t = x_t[:1] + mask * (x_t - x_t[:1])
         return x_t
 
@@ -186,6 +186,12 @@ class AttentionStore(AttentionControl):
 
     def reset(self):
         super(AttentionStore, self).reset()
+        # for attention_list in self.step_store.values():
+        #     for a in attention_list:
+        #         del a
+        # for attention_list in self.attention_store.values():
+        #     for a in attention_list:
+        #         del a
         self.step_store = self.get_empty_store()
         self.attention_store = {}
 

@@ -12,8 +12,6 @@ from tqdm.auto import tqdm
 
 import ptp_utils
 import seq_aligner
-
-
 from constants import MAX_NUM_WORDS
 
 
@@ -91,10 +89,11 @@ def text2image_ldm_stable(
     model.scheduler.set_timesteps(num_inference_steps)
     for i, t in enumerate(tqdm(model.scheduler.timesteps[-start_time:])):
         if uncond_embeddings_ is None:
+            uncond = uncond_embeddings[i].expand(
+                *text_embeddings.shape).to(device)
             context = torch.cat(
                 [
-                    uncond_embeddings[i].expand(
-                        *text_embeddings.shape).to(device),
+                    uncond,
                     text_embeddings,
                 ]
             )

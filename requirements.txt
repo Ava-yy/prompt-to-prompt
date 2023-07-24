@@ -4,7 +4,7 @@ ftfy==6.1.1
 opencv-python==4.8.0.74
 ipywidgets==8.0.6
 notebook==6.5.4
-torch==2.0.1                                                                                                        │
+torch==2.0.1
 torchvision==0.15.2
 
 # optional (?)
