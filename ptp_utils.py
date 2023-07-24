@@ -22,7 +22,9 @@ from IPython.display import display
 from PIL import Image, ImageDraw, ImageFont
 from tqdm.auto import tqdm
 
-MAX_NUM_WORDS = 20
+MAX_NUM_WORDS = 77
+
+
 def text_under_image(
     image: np.ndarray, text: str, text_color: Tuple[int, int, int] = (0, 0, 0)
 ):
@@ -142,7 +144,10 @@ def text2image_ldm(
     batch_size = len(prompt)
 
     uncond_input = model.tokenizer(
-        [""] * batch_size, padding="max_length", max_length=MAX_NUM_WORDS, return_tensors="pt"
+        [""] * batch_size,
+        padding="max_length",
+        max_length=MAX_NUM_WORDS,
+        return_tensors="pt",
     )
     uncond_embeddings = model.bert(uncond_input.input_ids.to(model.device))[0]
 
@@ -221,10 +226,7 @@ def text2image_ldm_stable(
 
 
 def register_attention_control(model, controller):
-    def ca_forward(
-        attention_module,
-        place_in_unet
-    ):
+    def ca_forward(attention_module, place_in_unet):
         def forward(
             hidden_states,
             encoder_hidden_states=None,
@@ -240,6 +242,7 @@ def register_attention_control(model, controller):
                 place_in_unet=place_in_unet,
                 **cross_attention_kwargs
             )
+
         return forward
 
     def process(
@@ -249,7 +252,7 @@ def register_attention_control(model, controller):
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
-        place_in_unet='up',
+        place_in_unet="up",
     ):
         residual = hidden_states
         if attn.spatial_norm is not None:
@@ -260,24 +263,30 @@ def register_attention_control(model, controller):
         if input_ndim == 4:
             batch_size, channel, height, width = hidden_states.shape
             hidden_states = hidden_states.view(
-                batch_size, channel, height * width).transpose(1, 2)
+                batch_size, channel, height * width
+            ).transpose(1, 2)
 
         batch_size, sequence_length, _ = (
-            hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
+            hidden_states.shape
+            if encoder_hidden_states is None
+            else encoder_hidden_states.shape
         )
         inner_dim = hidden_states.shape[-1]
 
         if attention_mask is not None:
             attention_mask = attn.prepare_attention_mask(
-                attention_mask, sequence_length, batch_size)
+                attention_mask, sequence_length, batch_size
+            )
             # scaled_dot_product_attention expects attention_mask shape to be
             # (batch, heads, source_length, target_length)
             attention_mask = attention_mask.view(
-                batch_size, attn.heads, -1, attention_mask.shape[-1])
+                batch_size, attn.heads, -1, attention_mask.shape[-1]
+            )
 
         if attn.group_norm is not None:
-            hidden_states = attn.group_norm(
-                hidden_states.transpose(1, 2)).transpose(1, 2)
+            hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(
+                1, 2
+            )
 
         query = attn.to_q(hidden_states)
 
@@ -286,15 +295,18 @@ def register_attention_control(model, controller):
             encoder_hidden_states = hidden_states
         elif attn.norm_cross:  # cross attention and we normalize
             encoder_hidden_states = attn.norm_encoder_hidden_states(
-                encoder_hidden_states)
+                encoder_hidden_states
+            )
 
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
 
         head_dim = inner_dim // attn.heads
-        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        query = query.view(batch_size, -1, attn.heads,
+                           head_dim).transpose(1, 2)
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+        value = value.view(batch_size, -1, attn.heads,
+                           head_dim).transpose(1, 2)
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
         # hidden_states = F.scaled_dot_product_attention(
@@ -304,20 +316,20 @@ def register_attention_control(model, controller):
         # that replaces the F.scaled_dot_product_attention above, to expose attn_weight. See
         # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
         attn_weight = torch.softmax(
-            (query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))), dim=-1)
-    #     attn_weight.shape == [instances, heads, w*h, tokens]. e.g., == [2, 8, 4096, 12]
+            (query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))), dim=-1
+        )
+        #     attn_weight.shape == [instances, heads, w*h, tokens]. e.g., == [2, 8, 4096, 12]
 
         # where attention edit happens
         attn_weight = controller(
-            attn_weight,
-            is_cross=is_cross,
-            place_in_unet=place_in_unet
+            attn_weight, is_cross=is_cross, place_in_unet=place_in_unet
         )
 
         hidden_states = attn_weight @ value
 
         hidden_states = hidden_states.transpose(1, 2).reshape(
-            batch_size, -1, attn.heads * head_dim)
+            batch_size, -1, attn.heads * head_dim
+        )
         hidden_states = hidden_states.to(query.dtype)
 
         # linear proj
@@ -326,8 +338,9 @@ def register_attention_control(model, controller):
         hidden_states = attn.to_out[1](hidden_states)
 
         if input_ndim == 4:
-            hidden_states = hidden_states.transpose(
-                -1, -2).reshape(batch_size, channel, height, width)
+            hidden_states = hidden_states.transpose(-1, -2).reshape(
+                batch_size, channel, height, width
+            )
 
         if attn.residual_connection:
             hidden_states = hidden_states + residual

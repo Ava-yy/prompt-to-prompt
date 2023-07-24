@@ -33,7 +33,8 @@ if __name__ == "__main__":
     # MAX_NUM_WORDS = 77
 
     device = (
-        torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+        torch.device("cuda:0") if torch.cuda.is_available(
+        ) else torch.device("cpu")
     )
     pipe = StableDiffusionPipeline.from_pretrained(
         "CompVis/stable-diffusion-v1-4",
@@ -60,23 +61,9 @@ if __name__ == "__main__":
     (image_gt, image_ddim), x_t, uncond_embeddings = null_inversion.invert(
         image_path,
         prompt,
-        offsets=(0, 0, 200, 0),  ## Modify or remove offsets according to your image!
+        # Modify or remove offsets according to your image!
+        offsets=(0, 0, 200, 0),
         verbose=True,
         num_inner_steps=10,
     )
-    torch.save(dict(x_t=x_t, uncond_embeddings=uncond_embeddings), 'invert.pth')
-
-    # save images from inverted latents
-    print(
-        f"null_inversion_images.shape: {null_inversion_images.shape}",
-        f"x_t.shape: {x_t.shape}",
-    )
-    # for i, image in enumerate(null_inversion_images):
-    #     image_pil = Image.fromarray(image)
-    #     image_pil.save(f"image-{i}.png")
-    image_grid_pil = ptp_utils.view_images(
-        [image_gt, image_ddim, null_inversion_images[0]]
-    )
-    image_grid_pil.save("image-invertion.png")
-    # main_utils.show_cross_attention(controller, 16, ["up", "down"])
-
+    torch.save(dict(x_t=x_t, uncond_embeddings=uncond_embeddings), "invert.pth")

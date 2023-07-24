@@ -33,7 +33,8 @@ if __name__ == "__main__":
     )
 
     device = (
-        torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+        torch.device("cuda:0") if torch.cuda.is_available(
+        ) else torch.device("cpu")
     )
     dtype = torch.float16
     pipe = StableDiffusionPipeline.from_pretrained(
@@ -58,44 +59,9 @@ if __name__ == "__main__":
     x_t = data.get("x_t").type(dtype)
     uncond_embeddings = [d.type(dtype) for d in data.get("uncond_embeddings")]
 
-    # prompt = "a cat sitting next to a mirror"
-    # prompts = [prompt]
-    # controller = AttentionStore()
-    # null_inversion_images, x_t = inversion_utils.text2image_ldm_stable(
-    #     pipe,
-    #     prompts,
-    #     controller,
-    #     latent=x_t,
-    #     generator=None,
-    #     num_inference_steps=NUM_DDIM_STEPS,
-    #     guidance_scale=GUIDANCE_SCALE,
-    #     uncond_embeddings=uncond_embeddings,
-    # )
-
-    prompts = ["a cat sitting next to a mirror", "a tiger sitting next to a mirror"]
-    cross_replace_steps = {
-        "default_": 0.8,
-    }
-    self_replace_steps = 0.5
-    # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
-    blend_word = (
-        ("cat",),
-        ("tiger",),
-    )
-    eq_params = {
-        "words": ("tiger",),
-        "values": (2,),
-    }  # amplify attention to the word "tiger" by *2
-    controller = make_controller(
-        prompts,
-        True,
-        cross_replace_steps,
-        self_replace_steps,
-        blend_word,
-        eq_params,
-        tokenizer,
-        num_ddim_steps=NUM_DDIM_STEPS,
-    )
+    prompt = "a cat sitting next to a mirror"
+    prompts = [prompt]
+    controller = AttentionStore()
     null_inversion_images, x_t = inversion_utils.text2image_ldm_stable(
         pipe,
         prompts,
@@ -106,11 +72,58 @@ if __name__ == "__main__":
         guidance_scale=GUIDANCE_SCALE,
         uncond_embeddings=uncond_embeddings,
     )
+    # save images from inverted latents
+    print(
+        f"null_inversion_images.shape: {null_inversion_images.shape}",
+        f"x_t.shape: {x_t.shape}",
+    )
     # for i, image in enumerate(null_inversion_images):
     #     image_pil = Image.fromarray(image)
-    #     image_pil.save(f"image-tiger-{i}.png")
-    image_grid_pil = ptp_utils.view_images([image_gt, *null_inversion_images])
-    image_grid_pil.save("image-tiger.png")
+    #     image_pil.save(f"image-{i}.png")
+    image_grid_pil = ptp_utils.view_images([*null_inversion_images])
+    image_grid_pil.save("image-invertion.png")
+    # main_utils.show_cross_attention(controller, 16, ["up", "down"])
+
+    # prompts = ["a cat sitting next to a mirror",
+    #            "a tiger sitting next to a mirror"]
+    # cross_replace_steps = {
+    #     "default_": 0.8,
+    # }
+    # self_replace_steps = 0.5
+    # # for local edit. If it is not local yet - use only the source object: blend_word = ((('cat',), ("cat",))).
+    # blend_word = (
+    #     ("cat",),
+    #     ("tiger",),
+    # )
+    # eq_params = {
+    #     "words": ("tiger",),
+    #     "values": (2,),
+    # }  # amplify attention to the word "tiger" by *2
+    # controller = make_controller(
+    #     prompts,
+    #     True,
+    #     cross_replace_steps,
+    #     self_replace_steps,
+    #     blend_word,
+    #     eq_params,
+    #     tokenizer,
+    #     num_ddim_steps=NUM_DDIM_STEPS,
+    # )
+    # null_inversion_images, x_t = inversion_utils.text2image_ldm_stable(
+    #     pipe,
+    #     prompts,
+    #     controller,
+    #     latent=x_t,
+    #     generator=None,
+    #     num_inference_steps=NUM_DDIM_STEPS,
+    #     guidance_scale=GUIDANCE_SCALE,
+    #     uncond_embeddings=uncond_embeddings,
+    # )
+    # # for i, image in enumerate(null_inversion_images):
+    # #     image_pil = Image.fromarray(image)
+    # #     image_pil.save(f"image-tiger-{i}.png")
+    # image_grid_pil = ptp_utils.view_images([image_gt, *null_inversion_images])
+    # image_grid_pil.save("image-tiger.png")
 
     # prompts = [
     #     "a cat sitting next to a mirror",
