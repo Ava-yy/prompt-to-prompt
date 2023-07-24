@@ -18,6 +18,12 @@ from AttentionControl import AttentionStore, make_controller
 from NullInversion import NullInversion
 
 if __name__ == "__main__":
+    MY_TOKEN = ""
+    LOW_RESOURCE = True
+    NUM_DDIM_STEPS = 20
+    GUIDANCE_SCALE = 7.5
+    # MAX_NUM_WORDS = 77
+
     scheduler = DDIMScheduler(
         beta_start=0.00085,
         beta_end=0.012,
@@ -25,12 +31,6 @@ if __name__ == "__main__":
         clip_sample=False,
         set_alpha_to_one=False,
     )
-
-    MY_TOKEN = ""
-    LOW_RESOURCE = True
-    NUM_DDIM_STEPS = 20
-    GUIDANCE_SCALE = 7.5
-    # MAX_NUM_WORDS = 77
 
     device = (
         torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -54,9 +54,9 @@ if __name__ == "__main__":
     # pipe.enable_sequential_cpu_offload()
     tokenizer = pipe.tokenizer
 
-    data = torch.load('invert.pth')
-    x_t = data.get('x_t').type(dtype)
-    uncond_embeddings = [d.type(dtype) for d in data.get('uncond_embeddings')]
+    data = torch.load("invert.pth")
+    x_t = data.get("x_t").type(dtype)
+    uncond_embeddings = [d.type(dtype) for d in data.get("uncond_embeddings")]
 
     # prompt = "a cat sitting next to a mirror"
     # prompts = [prompt]
