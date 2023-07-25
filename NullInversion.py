@@ -13,6 +13,7 @@ from tqdm.auto import tqdm
 import ptp_utils
 import seq_aligner
 from inversion_utils import load_512
+import main_utils
 
 
 class NullInversion:
@@ -149,6 +150,10 @@ class NullInversion:
         self.context = torch.cat([uncond_embeddings, text_embeddings])
         self.prompt = prompt
 
+    def reset(self):
+        del self.context
+        del self.prompt
+
     @torch.no_grad()
     def ddim_loop(self, latent):
         uncond_embeddings, cond_embeddings = self.context.chunk(2)
@@ -179,7 +184,6 @@ class NullInversion:
         uncond_embeddings_list = []
         latent_cur = latents[-1]
         bar = tqdm(total=num_inner_steps * self.NUM_DDIM_STEPS)
-        optimizer_state = None
         for i in range(self.NUM_DDIM_STEPS):
             uncond_embeddings = uncond_embeddings.clone().detach()
             uncond_embeddings.requires_grad = True
@@ -223,7 +227,6 @@ class NullInversion:
                 bar.update()
                 if loss_item < epsilon + i * 2e-5:
                     break
-            optimizer_state = optimizer.state_dict()
             for j in range(j + 1, num_inner_steps):
                 bar.update()
             uncond_embeddings_list.append(uncond_embeddings[:1].detach())
@@ -253,6 +256,8 @@ class NullInversion:
         uncond_embeddings = self.null_optimization(
             ddim_latents, num_inner_steps, early_stop_epsilon
         )
+        for ddim_lat in ddim_latents[:-1]:
+            del ddim_lat
         return (image_gt, image_rec), ddim_latents[-1], uncond_embeddings
 
     def __init__(self, model, NUM_DDIM_STEPS, GUIDANCE_SCALE):

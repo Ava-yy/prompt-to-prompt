@@ -5,10 +5,19 @@ from PIL import Image
 
 import ptp_utils
 from AttentionControl import AttentionStore
+import torch
 
 
 def makedirs(d):
     os.makedirs(d, exist_ok=True)
+
+
+def mem(prefix=""):
+    print(f"{prefix}{torch.cuda.memory_allocated()/1024**2:.2f}MB")
+
+
+def free():
+    torch.cuda.empty_cache()
 
 
 def aggregate_attention(
@@ -40,7 +49,8 @@ def show_cross_attention(
 ):
     tokens = tokenizer.encode(prompts[select])
     decoder = tokenizer.decode
-    attention_maps = aggregate_attention(attention_store, res, from_where, True, select)
+    attention_maps = aggregate_attention(
+        attention_store, res, from_where, True, select)
     images = []
     for i in range(len(tokens)):
         image = attention_maps[:, :, i]
@@ -73,7 +83,8 @@ def show_self_attention_comp(
         image = vh[i].reshape(res, res)
         image = image - image.min()
         image = 255 * image / image.max()
-        image = np.repeat(np.expand_dims(image, axis=2), 3, axis=2).astype(np.uint8)
+        image = np.repeat(np.expand_dims(image, axis=2),
+                          3, axis=2).astype(np.uint8)
         image = Image.fromarray(image).resize((256, 256))
         image = np.array(image)
         images.append(image)

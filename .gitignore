@@ -1,5 +1,9 @@
 __pycache__/
 .ipynb_checkpoints/
 data_out/
+
 *.pth
 *.png
+
+figs/
+data/
