@@ -64,7 +64,7 @@ if __name__ == "__main__":
     # pipe.enable_sequential_cpu_offload()
     tokenizer = pipe.tokenizer
 
-    output_dir = "figs/scene-example-1"
+    output_dir = "figs/scene-example-2"
     main_utils.makedirs(output_dir)
     for data_path in glob("data/inverted_scenes/inverted-*.pth"):
         source_image_fn = data_path.split("/")[-1].split(".")[0].split("-")[1]
