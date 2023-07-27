@@ -21,8 +21,10 @@ import torch
 from IPython.display import display
 from PIL import Image, ImageDraw, ImageFont
 from tqdm.auto import tqdm
+import torch.nn.functional as F
 
 from constants import MAX_NUM_WORDS
+import main_utils
 
 
 def text_under_image(
@@ -122,18 +124,20 @@ def latent2image(vae, latents):
 
 
 def init_latent(latent, model, height, width, generator, batch_size):
-    # def init_latent(latent, model, height, width, generator, batch_size, dtype=None):
-    #     if dtype is None:
-    #         dtype = model.unet.dtype
+    dtype = model.unet.dtype
     if latent is None:
         latent = torch.randn(
             (1, model.unet.config.in_channels, height // 8, width // 8),
             generator=generator,
-            #             dtype=dtype
+            dtype=dtype,
         )
-    latents = latent.expand(
-        batch_size, model.unet.config.in_channels, height // 8, width // 8
-    ).to(model.device)
+    latents = (
+        latent.expand(
+            batch_size, model.unet.config.in_channels, height // 8, width // 8
+        )
+        .type(dtype)
+        .to(model.device)
+    )
     return latent, latents
 
 
@@ -190,7 +194,7 @@ def text2image_ldm_stable(
     text_input = model.tokenizer(
         prompt,
         padding="max_length",
-        max_length=model.tokenizer.model_max_length,
+        max_length=MAX_NUM_WORDS,
         truncation=True,
         return_tensors="pt",
     )
@@ -205,21 +209,21 @@ def text2image_ldm_stable(
     uncond_embeddings = model.text_encoder(uncond_input.input_ids.to(model.device))[0]
 
     context = [uncond_embeddings, text_embeddings]
-    if not low_resource:
-        context = torch.cat(context)
+    # if not low_resource:
+    #     context = torch.cat(context)
+    context = torch.cat(context)
     latent, latents = init_latent(latent, model, height, width, generator, batch_size)
-    # MOD: half()
-    dtype = model.unet.dtype
-    latent = latent.type(dtype)
-    latents = latents.type(dtype)
+
+    # # MOD: half()
+    # dtype = model.unet.dtype
+    # latent = latent.type(dtype)
+    # latents = latents.type(dtype)
 
     model.scheduler.set_timesteps(num_inference_steps)
     for t in tqdm(model.scheduler.timesteps):
         latents = diffusion_step(
             model, controller, latents, context, t, guidance_scale, low_resource
         )
-        # print('diffusion_step output latents:', latents.dtype)
-
     image = latent2image(model.vae, latents)
 
     return image, latent
@@ -307,29 +311,37 @@ def register_attention_control(model, controller):
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # hidden_states = F.scaled_dot_product_attention(
-        #     query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
-        # )
+        d = query.size(-1)
+        # do not consider self-attention with resolution 64x64
+        # if not is_cross and d >= 4096:
+
         # The ATTENTION IMPLEMENTATION
         # that replaces the F.scaled_dot_product_attention above, to expose attn_weight. See
         # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
         attn_weight = torch.softmax(
-            (query @ key.transpose(-2, -1) / math.sqrt(query.size(-1))), dim=-1
+            query @ key.transpose(-2, -1) / math.sqrt(d),
+            dim=-1,
         )
-        #     attn_weight.shape == [instances, heads, w*h, tokens]. e.g., == [2, 8, 4096, 12]
-
+        # attn_weight.shape == [instances, heads, w*h, tokens]. e.g., == [2, 8, 4096, 12]
         # where attention edit happens
         attn_weight = controller(
             attn_weight, is_cross=is_cross, place_in_unet=place_in_unet
         )
-
         hidden_states = attn_weight @ value
+        # Original Memory-efficient attention
+        # hidden_states = F.scaled_dot_product_attention(
+        #     query,
+        #     key,
+        #     value,
+        #     attn_mask=attention_mask,
+        #     dropout_p=0.0,
+        #     is_causal=False,
+        # )
 
         hidden_states = hidden_states.transpose(1, 2).reshape(
             batch_size, -1, attn.heads * head_dim
         )
         hidden_states = hidden_states.to(query.dtype)
-
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)
         # dropout

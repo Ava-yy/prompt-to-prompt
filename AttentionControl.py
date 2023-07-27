@@ -101,7 +101,7 @@ class AttentionControl(abc.ABC):
 
     @property
     def num_uncond_att_layers(self):
-        return self.num_att_layers if self.LOW_RESOURCE else 0
+        return self.num_att_layers if self.low_resource else 0
 
     @abc.abstractmethod
     def forward(self, attn, is_cross: bool, place_in_unet: str):
@@ -109,7 +109,7 @@ class AttentionControl(abc.ABC):
 
     def __call__(self, attn, is_cross: bool, place_in_unet: str):
         if self.cur_att_layer >= self.num_uncond_att_layers:
-            if self.LOW_RESOURCE:
+            if self.low_resource:
                 attn = self.forward(attn, is_cross, place_in_unet)
             else:
                 h = attn.shape[0]
@@ -125,8 +125,11 @@ class AttentionControl(abc.ABC):
         self.cur_step = 0
         self.cur_att_layer = 0
 
-    def __init__(self):
-        self.LOW_RESOURCE = True
+    def __init__(
+        self,
+        low_resource=True,
+    ):
+        self.low_resource = low_resource
         self.cur_step = 0
         self.num_att_layers = -1
         self.cur_att_layer = 0
@@ -158,8 +161,8 @@ class AttentionStore(AttentionControl):
 
     def forward(self, attn, is_cross: bool, place_in_unet: str):
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"
-        if attn.shape[1] <= 32**2:  # avoid memory overhead
-            self.step_store[key].append(attn)
+        if self.should_store_attn(attn):
+            self.step_store[key].append(attn.to(self.store_device))
         return attn
 
     def between_steps(self):
@@ -189,20 +192,33 @@ class AttentionStore(AttentionControl):
         self.step_store = self.get_empty_store()
         self.attention_store = {}
 
-    def __init__(self):
-        super(AttentionStore, self).__init__()
+    def __init__(
+        self,
+        should_store_attn=lambda x: False,  # lambda x: x.shape[2] <= 32**2
+        store_device="cpu",
+        low_resource=True,
+    ):
+        super(AttentionStore, self).__init__(
+            low_resource=low_resource,
+        )
+        # gather attentions of the same part of U-net (down, mid, or up) in a list
+        # e.g., self.step_store['down_cross'] = [down_64x64, down_32x32, ...]
         self.step_store = self.get_empty_store()
         self.attention_store = {}
+
+        self.should_store_attn = should_store_attn
+        self.store_device = store_device
 
 
 class AttentionControlEdit(AttentionStore, abc.ABC):
     def step_callback(self, x_t):
         if self.local_blend is not None:
+            print("AttentionControlEdit: self.local_blend()")
             x_t = self.local_blend(x_t, self.attention_store)
         return x_t
 
     def replace_self_attention(self, attn_base, att_replace, place_in_unet):
-        if att_replace.shape[2] <= 32**2:
+        if att_replace.shape[3] <= 64**2:
             attn_base = attn_base.unsqueeze(0).expand(
                 att_replace.shape[0], *attn_base.shape
             )
@@ -224,12 +240,16 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
             attn_base, attn_repalce = attn[0], attn[1:]
             if is_cross:
                 alpha_words = self.cross_replace_alpha[self.cur_step]
+                # print("replace_cross_attention...")
                 attn_repalce_new = (
                     self.replace_cross_attention(attn_base, attn_repalce) * alpha_words
                     + (1 - alpha_words) * attn_repalce
                 )
+                # attn.shape == torch.Size([2, 2, 8, 256, 77])
+                # attn.shape == [prompts, null/new, heads, features, tokens]
                 attn[1:] = attn_repalce_new
             else:
+                # print("replace_self_attention...")
                 attn[1:] = self.replace_self_attention(
                     attn_base, attn_repalce, place_in_unet
                 )
@@ -247,8 +267,9 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
         local_blend: Optional[LocalBlend],
         tokenizer=None,
         device="cuda",
+        low_resource=True,
     ):
-        super(AttentionControlEdit, self).__init__()
+        super(AttentionControlEdit, self).__init__(low_resource=low_resource)
         self.batch_size = len(prompts)
         self.cross_replace_alpha = ptp_utils.get_time_words_attention_alpha(
             prompts, num_steps, cross_replace_steps, tokenizer
@@ -277,9 +298,15 @@ class AttentionReplace(AttentionControlEdit):
         local_blend: Optional[LocalBlend] = None,
         tokenizer=None,
         device="cuda",
+        low_resource=True,
     ):
         super(AttentionReplace, self).__init__(
-            prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend
+            prompts,
+            num_steps,
+            cross_replace_steps,
+            self_replace_steps,
+            local_blend,
+            low_resource=low_resource,
         )
         self.mapper = seq_aligner.get_replacement_mapper(prompts, tokenizer).to(device)
 
@@ -305,9 +332,15 @@ class AttentionRefine(AttentionControlEdit):
         local_blend: Optional[LocalBlend] = None,
         tokenizer=None,
         device="cuda",
+        low_resource=True,
     ):
         super(AttentionRefine, self).__init__(
-            prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend
+            prompts,
+            num_steps,
+            cross_replace_steps,
+            self_replace_steps,
+            local_blend,
+            low_resource=low_resource,
         )
         self.mapper, alphas = seq_aligner.get_refinement_mapper(prompts, tokenizer)
         self.mapper, alphas = self.mapper.to(device), alphas.to(device)
@@ -320,9 +353,9 @@ class AttentionReweight(AttentionControlEdit):
             attn_base = self.prev_controller.replace_cross_attention(
                 attn_base, att_replace
             )
-        attn_replace = attn_base[None, :, :, :] * self.equalizer[:, None, None, :].type(
-            attn_base.dtype
-        )
+        if self.equalizer.dtype != attn_base.dtype:
+            self.equalizer = self.equalizer.type(attn_base.dtype)
+        attn_replace = attn_base[None, :, :, :] * self.equalizer[:, None, None, :]
         # attn_replace = attn_replace / attn_replace.sum(-1, keepdims=True)
         return attn_replace
 
@@ -336,9 +369,15 @@ class AttentionReweight(AttentionControlEdit):
         local_blend: Optional[LocalBlend] = None,
         controller: Optional[AttentionControlEdit] = None,
         device="cuda",
+        low_resource=True,
     ):
         super(AttentionReweight, self).__init__(
-            prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend
+            prompts,
+            num_steps,
+            cross_replace_steps,
+            self_replace_steps,
+            local_blend,
+            low_resource=low_resource,
         )
         self.equalizer = equalizer.to(device)
         self.prev_controller = controller
@@ -360,28 +399,6 @@ def get_equalizer(
     return equalizer
 
 
-def aggregate_attention(
-    attention_store: AttentionStore,
-    res: int,
-    from_where: List[str],
-    is_cross: bool,
-    select: int,
-):
-    out = []
-    attention_maps = attention_store.get_average_attention()
-    num_pixels = res**2
-    for location in from_where:
-        for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
-            if item.shape[1] == num_pixels:
-                cross_maps = item.reshape(len(prompts), -1, res, res, item.shape[-1])[
-                    select
-                ]
-                out.append(cross_maps)
-    out = torch.cat(out, dim=0)
-    out = out.sum(0) / out.shape[0]
-    return out.cpu()
-
-
 def make_controller(
     prompts: List[str],
     is_replace_controller: bool,
@@ -397,6 +414,7 @@ def make_controller(
     else:
         lb = LocalBlend(prompts, blend_words, tokenizer=tokenizer)
     if is_replace_controller:
+        print("make_controller(): creating AttentionReplace")
         controller = AttentionReplace(
             prompts,
             num_ddim_steps,
@@ -406,6 +424,7 @@ def make_controller(
             tokenizer=tokenizer,
         )
     else:
+        print("make_controller(): creating AttentionRefine")
         controller = AttentionRefine(
             prompts,
             num_ddim_steps,
@@ -414,14 +433,15 @@ def make_controller(
             local_blend=lb,
             tokenizer=tokenizer,
         )
+
     if equilizer_params is not None:
+        print("make_controller(): creating AttentionReweight")
         eq = get_equalizer(
             prompts[1],
             equilizer_params["words"],
             equilizer_params["values"],
             tokenizer=tokenizer,
         )
-        eq = eq.half()  # MOD: half()
         controller = AttentionReweight(
             prompts,
             num_ddim_steps,

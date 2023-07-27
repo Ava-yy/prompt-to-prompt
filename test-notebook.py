@@ -18,8 +18,7 @@ LOW_RESOURCE = True
 NUM_DIFFUSION_STEPS = 50
 GUIDANCE_SCALE = 7.5
 MAX_NUM_WORDS = 77
-device = torch.device(
-    "cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 pipe = StableDiffusionPipeline.from_pretrained(
     "CompVis/stable-diffusion-v1-4",
     # "stabilityai/stable-diffusion-2-1",  # 768x768
@@ -35,17 +34,14 @@ tokenizer = pipe.tokenizer
 class LocalBlend:
     def __call__(self, x_t, attention_store):
         k = 1
-        maps = attention_store["down_cross"][2:4] + \
-            attention_store["up_cross"][:3]
+        maps = attention_store["down_cross"][2:4] + attention_store["up_cross"][:3]
         maps = [
-            item.reshape(
-                self.alpha_layers.shape[0], -1, 1, 16, 16, MAX_NUM_WORDS)
+            item.reshape(self.alpha_layers.shape[0], -1, 1, 16, 16, MAX_NUM_WORDS)
             for item in maps
         ]
         maps = torch.cat(maps, dim=1)
         maps = (maps * self.alpha_layers).sum(-1).mean(1)
-        mask = nnf.max_pool2d(maps, (k * 2 + 1, k * 2 + 1),
-                              (1, 1), padding=(k, k))
+        mask = nnf.max_pool2d(maps, (k * 2 + 1, k * 2 + 1), (1, 1), padding=(k, k))
         mask = nnf.interpolate(mask, size=(x_t.shape[2:]))
         mask = mask / mask.max(2, keepdims=True)[0].max(3, keepdims=True)[0]
         mask = mask.gt(self.threshold)
@@ -86,8 +82,7 @@ class AttentionControl(abc.ABC):
                 attn = self.forward(attn, is_cross, place_in_unet)
             else:
                 h = attn.shape[0]
-                attn[h // 2:] = self.forward(attn[h // 2:],
-                                             is_cross, place_in_unet)
+                attn[h // 2:] = self.forward(attn[h // 2:], is_cross, place_in_unet)
         self.cur_att_layer += 1
         if self.cur_att_layer == self.num_att_layers + self.num_uncond_att_layers:
             self.cur_att_layer = 0
@@ -172,8 +167,7 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
         raise NotImplementedError
 
     def forward(self, attn, is_cross: bool, place_in_unet: str):
-        super(AttentionControlEdit, self).forward(
-            attn, is_cross, place_in_unet)
+        super(AttentionControlEdit, self).forward(attn, is_cross, place_in_unet)
         if is_cross or (
             self.num_self_replace[0] <= self.cur_step < self.num_self_replace[1]
         ):
@@ -183,8 +177,7 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
             if is_cross:
                 alpha_words = self.cross_replace_alpha[self.cur_step]
                 attn_repalce_new = (
-                    self.replace_cross_attention(
-                        attn_base, attn_repalce) * alpha_words
+                    self.replace_cross_attention(attn_base, attn_repalce) * alpha_words
                     + (1 - alpha_words) * attn_repalce
                 )
                 attn[1:] = attn_repalce_new
@@ -231,15 +224,13 @@ class AttentionReplace(AttentionControlEdit):
         super(AttentionReplace, self).__init__(
             prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend
         )
-        self.mapper = seq_aligner.get_replacement_mapper(
-            prompts, tokenizer).to(device)
+        self.mapper = seq_aligner.get_replacement_mapper(prompts, tokenizer).to(device)
 
 
 class AttentionRefine(AttentionControlEdit):
     def replace_cross_attention(self, attn_base, att_replace):
         attn_base_replace = attn_base[:, :, self.mapper].permute(2, 0, 1, 3)
-        attn_replace = attn_base_replace * \
-            self.alphas + att_replace * (1 - self.alphas)
+        attn_replace = attn_base_replace * self.alphas + att_replace * (1 - self.alphas)
         return attn_replace
 
     def __init__(
@@ -253,8 +244,7 @@ class AttentionRefine(AttentionControlEdit):
         super(AttentionRefine, self).__init__(
             prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend
         )
-        self.mapper, alphas = seq_aligner.get_refinement_mapper(
-            prompts, tokenizer)
+        self.mapper, alphas = seq_aligner.get_refinement_mapper(prompts, tokenizer)
         self.mapper, alphas = self.mapper.to(device), alphas.to(device)
         self.alphas = alphas.reshape(alphas.shape[0], 1, 1, alphas.shape[1])
 
@@ -265,8 +255,7 @@ class AttentionReweight(AttentionControlEdit):
             attn_base = self.prev_controller.replace_cross_attention(
                 attn_base, att_replace
             )
-        attn_replace = attn_base[None, :, :, :] * \
-            self.equalizer[:, None, None, :]
+        attn_replace = attn_base[None, :, :, :] * self.equalizer[:, None, None, :]
         return attn_replace
 
     def __init__(
@@ -329,8 +318,7 @@ def show_cross_attention(
 ):
     tokens = tokenizer.encode(prompts[select])
     decoder = tokenizer.decode
-    attention_maps = aggregate_attention(
-        attention_store, res, from_where, True, select)
+    attention_maps = aggregate_attention(attention_store, res, from_where, True, select)
     images = []
     for i in range(len(tokens)):
         image = attention_maps[:, :, i]
@@ -363,8 +351,7 @@ def show_self_attention_comp(
         image = vh[i].reshape(res, res)
         image = image - image.min()
         image = 255 * image / image.max()
-        image = np.repeat(np.expand_dims(image, axis=2),
-                          3, axis=2).astype(np.uint8)
+        image = np.repeat(np.expand_dims(image, axis=2), 3, axis=2).astype(np.uint8)
         image = Image.fromarray(image).resize((256, 256))
         image = np.array(image)
         images.append(image)
