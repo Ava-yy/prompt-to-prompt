@@ -21,8 +21,7 @@ class LocalBlend:
         k = 1
         maps = (maps * alpha).sum(-1).mean(1)
         if use_pool:
-            maps = nnf.max_pool2d(
-                maps, (k * 2 + 1, k * 2 + 1), (1, 1), padding=(k, k))
+            maps = nnf.max_pool2d(maps, (k * 2 + 1, k * 2 + 1), (1, 1), padding=(k, k))
         mask = nnf.interpolate(maps, size=(x_t.shape[2:]))
         mask = mask / mask.max(2, keepdims=True)[0].max(3, keepdims=True)[0]
         mask = mask.gt(self.th[1 - int(use_pool)])
@@ -32,18 +31,15 @@ class LocalBlend:
     def __call__(self, x_t, attention_store):
         self.counter += 1
         if self.counter > self.start_blend:
-            maps = attention_store["down_cross"][2:4] + \
-                attention_store["up_cross"][:3]
+            maps = attention_store["down_cross"][2:4] + attention_store["up_cross"][:3]
             maps = [
-                item.reshape(
-                    self.alpha_layers.shape[0], -1, 1, 16, 16, MAX_NUM_WORDS)
+                item.reshape(self.alpha_layers.shape[0], -1, 1, 16, 16, MAX_NUM_WORDS)
                 for item in maps
             ]
             maps = torch.cat(maps, dim=1)
             mask = self.get_mask(maps, x_t, self.alpha_layers, True)
             if self.substruct_layers is not None:
-                maps_sub = ~self.get_mask(
-                    maps, x_t, self.substruct_layers, False)
+                maps_sub = ~self.get_mask(maps, x_t, self.substruct_layers, False)
                 mask = mask * maps_sub
             mask = mask.type(x_t.dtype)
             x_t = x_t[:1] + mask * (x_t - x_t[:1])
@@ -69,8 +65,7 @@ class LocalBlend:
                 alpha_layers[i, :, :, :, :, ind] = 1
 
         if substruct_words is not None:
-            substruct_layers = torch.zeros(
-                len(prompts), 1, 1, 1, 1, MAX_NUM_WORDS)
+            substruct_layers = torch.zeros(len(prompts), 1, 1, 1, 1, MAX_NUM_WORDS)
             for i, (prompt, words_) in enumerate(zip(prompts, substruct_words)):
                 if type(words_) is str:
                     words_ = [words_]
@@ -118,8 +113,7 @@ class AttentionControl(abc.ABC):
                 attn = self.forward(attn, is_cross, place_in_unet)
             else:
                 h = attn.shape[0]
-                attn[h // 2:] = self.forward(attn[h // 2:],
-                                             is_cross, place_in_unet)
+                attn[h // 2:] = self.forward(attn[h // 2:], is_cross, place_in_unet)
         self.cur_att_layer += 1
         if self.cur_att_layer == self.num_att_layers + self.num_uncond_att_layers:
             self.cur_att_layer = 0
@@ -221,8 +215,7 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
         raise NotImplementedError
 
     def forward(self, attn, is_cross: bool, place_in_unet: str):
-        super(AttentionControlEdit, self).forward(
-            attn, is_cross, place_in_unet)
+        super(AttentionControlEdit, self).forward(attn, is_cross, place_in_unet)
         if is_cross or (
             self.num_self_replace[0] <= self.cur_step < self.num_self_replace[1]
         ):
@@ -232,8 +225,7 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
             if is_cross:
                 alpha_words = self.cross_replace_alpha[self.cur_step]
                 attn_repalce_new = (
-                    self.replace_cross_attention(
-                        attn_base, attn_repalce) * alpha_words
+                    self.replace_cross_attention(attn_base, attn_repalce) * alpha_words
                     + (1 - alpha_words) * attn_repalce
                 )
                 attn[1:] = attn_repalce_new
@@ -289,8 +281,7 @@ class AttentionReplace(AttentionControlEdit):
         super(AttentionReplace, self).__init__(
             prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend
         )
-        self.mapper = seq_aligner.get_replacement_mapper(
-            prompts, tokenizer).to(device)
+        self.mapper = seq_aligner.get_replacement_mapper(prompts, tokenizer).to(device)
 
 
 class AttentionRefine(AttentionControlEdit):
@@ -301,8 +292,7 @@ class AttentionRefine(AttentionControlEdit):
         # print(attn_base[:, :, self.mapper].shape)
 
         attn_base_replace = attn_base[0, :, :, self.mapper].permute(2, 0, 1, 3)
-        attn_replace = attn_base_replace * \
-            self.alphas + att_replace * (1 - self.alphas)
+        attn_replace = attn_base_replace * self.alphas + att_replace * (1 - self.alphas)
         # attn_replace = attn_replace / attn_replace.sum(-1, keepdims=True)
         return attn_replace
 
@@ -319,8 +309,7 @@ class AttentionRefine(AttentionControlEdit):
         super(AttentionRefine, self).__init__(
             prompts, num_steps, cross_replace_steps, self_replace_steps, local_blend
         )
-        self.mapper, alphas = seq_aligner.get_refinement_mapper(
-            prompts, tokenizer)
+        self.mapper, alphas = seq_aligner.get_refinement_mapper(prompts, tokenizer)
         self.mapper, alphas = self.mapper.to(device), alphas.to(device)
         self.alphas = alphas.reshape(alphas.shape[0], 1, 1, alphas.shape[1])
 

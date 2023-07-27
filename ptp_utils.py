@@ -50,8 +50,7 @@ def view_images(images, num_rows=1, offset_ratio=0.02):
         num_empty = 0
 
     empty_images = np.ones(images[0].shape, dtype=np.uint8) * 255
-    images = [image.astype(np.uint8)
-              for image in images] + [empty_images] * num_empty
+    images = [image.astype(np.uint8) for image in images] + [empty_images] * num_empty
     num_items = len(images)
 
     h, w, c = images[0].shape
@@ -76,7 +75,7 @@ def view_images(images, num_rows=1, offset_ratio=0.02):
             ] = images[i * num_cols + j]
 
     pil_img = Image.fromarray(image_)
-    display(pil_img)
+    # display(pil_img)
     return pil_img
 
 
@@ -195,8 +194,7 @@ def text2image_ldm_stable(
         truncation=True,
         return_tensors="pt",
     )
-    text_embeddings = model.text_encoder(
-        text_input.input_ids.to(model.device))[0]
+    text_embeddings = model.text_encoder(text_input.input_ids.to(model.device))[0]
     max_length = text_input.input_ids.shape[-1]
     uncond_input = model.tokenizer(
         [""] * batch_size,
@@ -204,14 +202,12 @@ def text2image_ldm_stable(
         max_length=max_length,
         return_tensors="pt",
     )
-    uncond_embeddings = model.text_encoder(
-        uncond_input.input_ids.to(model.device))[0]
+    uncond_embeddings = model.text_encoder(uncond_input.input_ids.to(model.device))[0]
 
     context = [uncond_embeddings, text_embeddings]
     if not low_resource:
         context = torch.cat(context)
-    latent, latents = init_latent(
-        latent, model, height, width, generator, batch_size)
+    latent, latents = init_latent(latent, model, height, width, generator, batch_size)
     # MOD: half()
     dtype = model.unet.dtype
     latent = latent.type(dtype)
@@ -306,11 +302,9 @@ def register_attention_control(model, controller):
         value = attn.to_v(encoder_hidden_states)
 
         head_dim = inner_dim // attn.heads
-        query = query.view(batch_size, -1, attn.heads,
-                           head_dim).transpose(1, 2)
+        query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-        value = value.view(batch_size, -1, attn.heads,
-                           head_dim).transpose(1, 2)
+        value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
         # hidden_states = F.scaled_dot_product_attention(
@@ -426,8 +420,7 @@ def register_attention_control(model, controller):
 def get_word_inds(text: str, word_place: int, tokenizer):
     split_text = text.split(" ")
     if type(word_place) is str:
-        word_place = [i for i, word in enumerate(
-            split_text) if word_place == word]
+        word_place = [i for i, word in enumerate(split_text) if word_place == word]
     elif type(word_place) is int:
         word_place = [word_place]
     out = []
@@ -455,8 +448,7 @@ def update_alpha_time_word(
 ):
     if type(bounds) is float:
         bounds = 0, bounds
-    start, end = int(bounds[0] * alpha.shape[0]
-                     ), int(bounds[1] * alpha.shape[0])
+    start, end = int(bounds[0] * alpha.shape[0]), int(bounds[1] * alpha.shape[0])
     if word_inds is None:
         word_inds = torch.arange(alpha.shape[2])
     alpha[:start, prompt_ind, word_inds] = 0
@@ -476,8 +468,7 @@ def get_time_words_attention_alpha(
         cross_replace_steps = {"default_": cross_replace_steps}
     if "default_" not in cross_replace_steps:
         cross_replace_steps["default_"] = (0.0, 1.0)
-    alpha_time_words = torch.zeros(
-        num_steps + 1, len(prompts) - 1, max_num_words)
+    alpha_time_words = torch.zeros(num_steps + 1, len(prompts) - 1, max_num_words)
     for i in range(len(prompts) - 1):
         alpha_time_words = update_alpha_time_word(
             alpha_time_words, cross_replace_steps["default_"], i

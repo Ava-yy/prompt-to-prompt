@@ -98,14 +98,8 @@ def text2image_ldm_stable(
     model.scheduler.set_timesteps(num_inference_steps)
     for i, t in enumerate(tqdm(model.scheduler.timesteps[-start_time:])):
         if uncond_embeddings_ is None:
-            uncond = uncond_embeddings[i].expand(
-                *text_embeddings.shape).to(device)
-            context = torch.cat(
-                [
-                    uncond,
-                    text_embeddings,
-                ]
-            )
+            uncond = uncond_embeddings[i].expand(*text_embeddings.shape).to(device)
+            context = torch.cat([uncond, text_embeddings])
         else:
             context = torch.cat([uncond_embeddings_, text_embeddings])
         latents = ptp_utils.diffusion_step(

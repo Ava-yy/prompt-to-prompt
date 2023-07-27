@@ -3,6 +3,7 @@ import shutil
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from glob import glob
 from natsort import natsorted
+import re
 
 import numpy as np
 import torch
@@ -32,8 +33,7 @@ if __name__ == "__main__":
     GUIDANCE_SCALE = 7.5
     dtype = torch.float16
     device = (
-        torch.device("cuda:0") if torch.cuda.is_available(
-        ) else torch.device("cpu")
+        torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     )
 
     scheduler = DDIMScheduler(
@@ -43,14 +43,12 @@ if __name__ == "__main__":
         clip_sample=False,
         set_alpha_to_one=False,
     )
-
     pipe = StableDiffusionPipeline.from_pretrained(
         "CompVis/stable-diffusion-v1-4",
         use_auth_token=MY_TOKEN,
         scheduler=scheduler,
         torch_dtype=dtype,
     ).to(device)
-
     for module in [
         pipe.unet,
         pipe.vae,
@@ -58,22 +56,32 @@ if __name__ == "__main__":
     ]:
         for p in module.parameters():
             p.requires_grad_(False)
-
     # pipe.enable_attention_slicing()
     # pipe.enable_vae_slicing()
     # pipe.enable_sequential_cpu_offload()
     tokenizer = pipe.tokenizer
 
-    output_dir = "figs/scene-example-2"
+    input_dir = "data/inverted_scenes_varying_prompts//"
+    original_image_dir = (
+        "/home/zhaoy32/Desktop/understandingbdl/datasets/val_256/{}.jpg"
+    )
+    output_dir = "figs/scene-example-3"
+    # input_dir = "data/inverted_nashville_coffee_shops_varying_prompts/"
+    # original_image_dir = "example_images/{}.jpg"
+    # output_dir = "figs/scene-example-4"
+
     main_utils.makedirs(output_dir)
-    for data_path in glob("data/inverted_scenes/inverted-*.pth"):
-        source_image_fn = data_path.split("/")[-1].split(".")[0].split("-")[1]
+    pattern = "inverted-(.+)-(prompt_v\d+)"
+
+    for data_path in natsorted(glob(f"{input_dir}/inverted-*.pth")):
+        fn = data_path.split("/")[-1].split(".")[0]
+        source_image_fn, prompt_verion = re.findall(pattern, fn)[0]
+        print(source_image_fn, prompt_verion)
+
         shutil.copy(
-            f"/home/zhaoy32/Desktop/understandingbdl/datasets/val_256/{source_image_fn}.jpg",
+            original_image_dir.format(source_image_fn),
             output_dir + "/",
         )
-        print(source_image_fn)
-        continue
 
         # Load data from disk
         print(f"loading invesion at {data_path}...")
@@ -83,6 +91,7 @@ if __name__ == "__main__":
             d.type(dtype)[:, :MAX_NUM_WORDS] for d in data.get("uncond_embeddings")
         ]
         prompt = data.get("prompt", "A scene consisting of tables and chairs")
+        print(prompt)
 
         main_utils.mem()
 
@@ -103,7 +112,9 @@ if __name__ == "__main__":
             uncond_embeddings=uncond_embeddings,
         )
         image_grid_pil = ptp_utils.view_images([*null_inversion_images])
-        image_grid_pil.save(f"{output_dir}/reconstruct-{source_image_fn}.png")
+        image_grid_pil.save(
+            f"{output_dir}/reconstruct-{source_image_fn}-{prompt_verion}.png"
+        )
         # main_utils.show_cross_attention(controller, 16, ["up", "down"])
         del controller, null_inversion_images
 
@@ -138,7 +149,7 @@ if __name__ == "__main__":
             blend_word = None
             eq_params = {
                 "words": replacement_prompt.split(),
-                "values": (10.0,) * len(replacement_prompt.split()),
+                "values": (10.0,) * (2 * len(replacement_prompt.split())),
             }
             controller = make_controller(
                 prompts,
@@ -167,6 +178,6 @@ if __name__ == "__main__":
             # save figures
             image_grid_pil = ptp_utils.view_images([*ptp_images])
             image_grid_pil.save(
-                f"{output_dir}/edit-{source_image_fn}-{class_label}.png"
+                f"{output_dir}/edit-{source_image_fn}-{class_label}-{prompt_verion}.png"
             )
             controller.reset()
