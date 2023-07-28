@@ -1,31 +1,31 @@
-from io import BytesIO
 from base64 import b64encode
-import abc
-import re
-import shutil
 from glob import glob
-from typing import Callable, Dict, List, Optional, Tuple, Union
-
+from io import BytesIO
 import numpy as np
 import torch
-import torch.nn.functional as nnf
+
 from diffusers import DDIMScheduler, StableDiffusionPipeline
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from natsort import natsorted
 from PIL import Image
-from torch.optim.adam import Adam
-from tqdm.notebook import tqdm
 
-import inversion_utils
 import main_utils
 import ptp_utils
 import seq_aligner
-
-# from AttentionControl import AttentionStore
 from AttentionControl import EmptyControl, make_controller
-from constants import MAX_NUM_WORDS
-from NullInversion import NullInversion
+
+# import abc
+# import re
+# import shutil
+# import torch.nn.functional as nnf
+# import inversion_utils
+# from AttentionControl import AttentionStore
+# from typing import Callable, Dict, List, Optional, Tuple, Union
+# from torch.optim.adam import Adam
+# from tqdm.notebook import tqdm
+# from constants import MAX_NUM_WORDS
+# from NullInversion import NullInversion
 
 app = Flask(__name__)
 CORS(app)
@@ -63,49 +63,19 @@ def index():
 # image_grid_pil.save("test.png")
 
 
-# def ptp_refine():
-#     # Test 2: ptp refine + reweight
-#     prompts = [
-#         # "a scene consisting of tables and chairs",
-#         "a coffee shop scene consisting of tables and chairs",
-#         "a coffee shop scene consisting of tables and chairs",
-#     ]
-#     cross_replace_steps = {
-#         "default_": (0.0, 0.8),
-#     }
-#     self_replace_steps = 0.4
-#     blend_words = None
-#     eq_params = {
-#         "words": ("coffee", "shop"),
-#         "values": (20.0, 20.0),
-#     }
-#     controller = make_controller(
-#         prompts,
-#         False,
-#         cross_replace_steps,
-#         self_replace_steps,
-#         blend_words,
-#         eq_params,
-#         tokenizer,
-#         num_ddim_steps=NUM_DDIM_STEPS,
-#     )
-
-
 @app.route("/text2image", methods=["GET", "POST"])
-def text2image():
-    if request.method == "GET":
-        # for testing
-        prompt = "A photo of a cat riding a bike"
-        seed = 0
-        num_steps = 15
-        guidance_scale = 7.5
-    elif request.method == "POST":
+def text2image(
+    prompt="A photo of a cat riding a bike",
+    seed=0,
+    num_steps=15,
+    guidance_scale=7.5,
+):
+    if request.method == "POST":
         req = request.get_json()
-        prompt = req.get("prompt")
-        seed = req.get("seed", 0)
-        num_steps = req.get("num_steps", 15)
-        guidance_scale = req.get("guidance_scale", 7.5)
-
+        prompt = req.get("prompt", prompt)
+        seed = req.get("seed", seed)
+        num_steps = req.get("num_steps", num_steps)
+        guidance_scale = req.get("guidance_scale", guidance_scale)
     ptp_images, _ = ptp_utils.text2image_ldm_stable(
         pipe,
         [prompt],
@@ -123,40 +93,47 @@ def text2image():
     )
 
 
-@app.route("/replace", methods=["GET", "POST"])
-def ptp_replace(
+@app.route("/refine", methods=["GET", "POST"])
+def ptp_refine(
     prompts=[
-        "A photo of a cat riding a bike",
-        "A photo of a cat riding a car",
+        "Photo of a white male",
+        "Photo of a Asian male in eye glasses",
     ],
+    seed=0,
+    num_steps=15,
+    guidance_scale=7.5,
+    cross_replace_steps={
+        "default_": (0.0, 0.8),
+    },
+    self_replace_steps=0.4,
+    blend_words=None,
+    eq_params={
+        "words": ("eye", "glasses"),
+        "values": (1.0, 2.0),
+    },
 ):
     if request.method == "POST":
         req = request.get_json()
         prompts = [req.get("prompt1"), req.get("prompt2")]
-        seed = req.get("seed", 0)
-        num_steps = req.get("num_steps", 15)
-        guidance_scale = req.get("guidance_scale", 7.5)
-        cross_replace_steps = {
-            "default_": (0.0, 0.8),
-        }
-        self_replace_steps = 0.4
-        blend_words = None
-        eq_params = {
-            "words": ("car", "riding"),
-            "values": (5.0, 1.0),
-        }
-        # eq_params = None
-    print(prompts)
+        seed = req.get("seed", seed)
+        num_steps = req.get("num_steps", num_steps)
+        guidance_scale = req.get("guidance_scale", guidance_scale)
+        eq_params = req.get("eq_params", eq_params)
+        self_replace_steps = float(req.get("self_replace_steps", self_replace_steps))
+        cross_replace_steps = float(req.get("cross_replace_steps", cross_replace_steps))
+        mask = req.get("mask", np.ones([64, 64]).tolist())
+        mask = torch.tensor(mask)
 
     controller = make_controller(
         prompts,
-        True,
+        False,
         cross_replace_steps,
         self_replace_steps,
         blend_words,
         eq_params,
         tokenizer,
         num_ddim_steps=num_steps,
+        mask=mask,
     )
     ptp_images, _ = ptp_utils.text2image_ldm_stable(
         pipe,
@@ -165,8 +142,8 @@ def ptp_replace(
         num_inference_steps=num_steps,
         guidance_scale=guidance_scale,
         generator=torch.Generator().manual_seed(seed),
-        # latent=x_t,
         low_resource=True,
+        # latent=x_t,
     )
     controller.reset()
     print("ptp_images.shape", ptp_images.shape)

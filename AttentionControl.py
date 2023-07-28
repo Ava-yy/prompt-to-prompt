@@ -16,6 +16,19 @@ from constants import MAX_NUM_WORDS
 
 
 # ## Prompt-to-Prompt code
+class MaskBlend:
+    def __call__(self, x_t):
+        if x_t.device != self.mask.device:
+            self.mask = self.mask.to(x_t.device)
+        if x_t.dtype != self.mask.dtype:
+            self.mask = self.mask.type(x_t.dtype)
+        x_t[1:] = x_t[1:] * self.mask + x_t[:1] * (1 - self.mask)
+        return x_t
+
+    def __init__(self, mask=torch.ones(64, 64)):
+        self.mask = mask
+
+
 class LocalBlend:
     def get_mask(self, maps, x_t, alpha, use_pool):
         k = 1
@@ -28,6 +41,7 @@ class LocalBlend:
         mask = mask[:1] + mask
         return mask
 
+    # TODO make a manual mask version of this
     def __call__(self, x_t, attention_store):
         self.counter += 1
         if self.counter > self.start_blend:
@@ -205,7 +219,6 @@ class AttentionStore(AttentionControl):
         # e.g., self.step_store['down_cross'] = [down_64x64, down_32x32, ...]
         self.step_store = self.get_empty_store()
         self.attention_store = {}
-
         self.should_store_attn = should_store_attn
         self.store_device = store_device
 
@@ -215,6 +228,11 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
         if self.local_blend is not None:
             print("AttentionControlEdit: self.local_blend()")
             x_t = self.local_blend(x_t, self.attention_store)
+        if self.mask is not None:
+            crs = self.cross_replace_steps
+            if crs[0] <= self.cur_step < crs[1]:
+                # print("AttentionControlEdit: self.mask()")
+                x_t = self.mask(x_t)
         return x_t
 
     def replace_self_attention(self, attn_base, att_replace, place_in_unet):
@@ -265,21 +283,29 @@ class AttentionControlEdit(AttentionStore, abc.ABC):
         ],
         self_replace_steps: Union[float, Tuple[float, float]],
         local_blend: Optional[LocalBlend],
+        mask=None,
         tokenizer=None,
         device="cuda",
         low_resource=True,
     ):
+        print("AttentionControlEdit init", mask)
         super(AttentionControlEdit, self).__init__(low_resource=low_resource)
         self.batch_size = len(prompts)
+        self.num_steps = num_steps
         self.cross_replace_alpha = ptp_utils.get_time_words_attention_alpha(
             prompts, num_steps, cross_replace_steps, tokenizer
         ).to(device)
         if type(self_replace_steps) is float:
             self_replace_steps = 0, self_replace_steps
+        if type(cross_replace_steps) is float:
+            cross_replace_steps = 0, int(cross_replace_steps * num_steps)
+        self.cross_replace_steps = cross_replace_steps
+
         self.num_self_replace = int(num_steps * self_replace_steps[0]), int(
             num_steps * self_replace_steps[1]
         )
         self.local_blend = local_blend
+        self.mask = mask
 
 
 class AttentionReplace(AttentionControlEdit):
@@ -333,6 +359,7 @@ class AttentionRefine(AttentionControlEdit):
         tokenizer=None,
         device="cuda",
         low_resource=True,
+        mask=None,
     ):
         super(AttentionRefine, self).__init__(
             prompts,
@@ -341,6 +368,7 @@ class AttentionRefine(AttentionControlEdit):
             self_replace_steps,
             local_blend,
             low_resource=low_resource,
+            mask=mask,
         )
         self.mapper, alphas = seq_aligner.get_refinement_mapper(prompts, tokenizer)
         self.mapper, alphas = self.mapper.to(device), alphas.to(device)
@@ -370,6 +398,7 @@ class AttentionReweight(AttentionControlEdit):
         controller: Optional[AttentionControlEdit] = None,
         device="cuda",
         low_resource=True,
+        mask=None,
     ):
         super(AttentionReweight, self).__init__(
             prompts,
@@ -378,6 +407,7 @@ class AttentionReweight(AttentionControlEdit):
             self_replace_steps,
             local_blend,
             low_resource=low_resource,
+            mask=mask,
         )
         self.equalizer = equalizer.to(device)
         self.prev_controller = controller
@@ -408,11 +438,15 @@ def make_controller(
     equilizer_params=None,
     tokenizer=None,
     num_ddim_steps=50,
+    mask=torch.ones(64, 64),
 ) -> AttentionControlEdit:
+    if mask is not None:
+        mask = MaskBlend(mask)
     if blend_words is None:
         lb = None
     else:
         lb = LocalBlend(prompts, blend_words, tokenizer=tokenizer)
+
     if is_replace_controller:
         print("make_controller(): creating AttentionReplace")
         controller = AttentionReplace(
@@ -450,5 +484,6 @@ def make_controller(
             equalizer=eq,
             local_blend=lb,
             controller=controller,
+            mask=mask,
         )
     return controller
