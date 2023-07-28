@@ -8,6 +8,9 @@ Under a virtual env:
 ```
 pip install -r requirements.txt
 ```
+## The ptp web interface:
+1. ``` python app-ptp.py ``` a server should start at port 5000
+2. Goto https://observablehq.com/d/d9ef3a0bbc6f1703
 
 
 ## ============= ORIGINAL README =============
