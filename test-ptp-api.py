@@ -1,14 +1,14 @@
 import abc
-import shutil
-from typing import Callable, Dict, List, Optional, Tuple, Union
-from glob import glob
-from natsort import natsorted
 import re
+import shutil
+from glob import glob
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import torch.nn.functional as nnf
 from diffusers import DDIMScheduler, StableDiffusionPipeline
+from natsort import natsorted
 from PIL import Image
 from torch.optim.adam import Adam
 from tqdm.notebook import tqdm
@@ -22,7 +22,6 @@ import seq_aligner
 from AttentionControl import EmptyControl, make_controller
 from constants import MAX_NUM_WORDS
 from NullInversion import NullInversion
-
 
 # for i, image in enumerate(null_inversion_images):
 #     image_pil = Image.fromarray(image)
