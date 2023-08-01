@@ -191,4 +191,4 @@ if __name__ == "__main__":
     # pipe.enable_sequential_cpu_offload()
     tokenizer = pipe.tokenizer
     main_utils.mem()
-    app.run(debug=True)
+    app.run(debug=False)
