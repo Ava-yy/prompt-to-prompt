@@ -7,6 +7,8 @@ from diffusers import (
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 from torchvision.utils import make_grid
+from glob import glob
+from natsort import natsorted
 
 import inversion_utils
 
@@ -255,6 +257,7 @@ def test_invert_synthetic(
     guidance_scale=7.5,
     num_steps=50,
     mixing_factor=0.93,
+    image_filepath_out="EDICT-invert-synthetic.png",
     device="cuda",
 ):
     latents = torch.randn(
@@ -320,7 +323,7 @@ def test_invert_synthetic(
     plt.subplot(122)
     images = decode(z1, vae)
     show_images(images)
-    plt.savefig("EDICT-invert-synthetic.png", bbox_inches="tight")
+    plt.savefig(image_filepath_out, bbox_inches="tight")
     plt.close()
     # plt.show()
 
@@ -332,6 +335,7 @@ def test_invert_real(
     guidance_scale=7.5,
     num_steps=50,
     mixing_factor=0.93,
+    image_filepath_out="EDICT-invert-real.png",
 ):
     # [x] load image
     # [x] encode image
@@ -384,7 +388,7 @@ def test_invert_real(
     plt.subplot(122)
     images = decode(z1, vae)
     show_images(images)
-    plt.savefig("EDICT-invert-real.png", bbox_inches="tight")
+    plt.savefig(image_filepath_out, bbox_inches="tight")
     plt.close()
 
 
@@ -428,21 +432,40 @@ if __name__ == "__main__":
     num_steps = 50
     mixing_factor = 0.93  # EDICT param "p", typical: 0.93, recommended: [0.9, 0.97]
 
-    prompts = ["", "A photo of a cat sitting next to a dog"]
-    generator = torch.manual_seed(8)
-    text_embeddings = process_prompts(prompts, tokenizer, text_encoder)
+    # # TEST 1
+    # prompts = ["", "A photo of a cat sitting next to a dog"]
+    # generator = torch.manual_seed(8)
+    # text_embeddings = process_prompts(prompts, tokenizer, text_encoder)
     # test_invert_synthetic(
     #     pipe, generator, text_embeddings, guidance_scale, num_steps, mixing_factor
     # )
 
-    prompts = ["", "What ever this is seems not matter for inversion"]
-    generator = torch.manual_seed(8)
+    # # TEST 2
+    # prompts = ["", "Whatever prompt used here seems not matter for inversion"]
+    # text_embeddings = process_prompts(prompts, tokenizer, text_encoder)
+    # test_invert_real(
+    #     pipe=pipe,
+    #     image_filepath="example_images/gnochi_mirror.jpeg",
+    #     text_embeddings=text_embeddings,
+    #     guidance_scale=7.5,
+    #     num_steps=50,
+    #     mixing_factor=0.93,
+    # )
+
+    prompts = ["", "Whatever prompt used here seems not matter for inversion"]
     text_embeddings = process_prompts(prompts, tokenizer, text_encoder)
-    test_invert_real(
-        pipe=pipe,
-        image_filepath="example_images/gnochi_mirror.jpeg",
-        text_embeddings=text_embeddings,
-        guidance_scale=7.5,
-        num_steps=50,
-        mixing_factor=0.93,
+    image_fns = natsorted(
+        glob("/home/zhaoy32/Desktop/understandingbdl/datasets/val_256/*.jpg")
     )
+    for image_filepath in image_fns[:5]:
+        print(image_filepath)
+        fn_out = image_filepath.split("/")[-1].split(".")[0]
+        test_invert_real(
+            pipe=pipe,
+            image_filepath=image_filepath,
+            text_embeddings=text_embeddings,
+            guidance_scale=7.5,
+            num_steps=50,
+            mixing_factor=0.93,
+            image_filepath_out=f"EDICT-reconstruct-images/{fn_out}.png",
+        )
